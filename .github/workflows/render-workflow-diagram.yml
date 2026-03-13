@@ -1,0 +1,51 @@
+name: Render Workflow Diagram
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "WORKFLOW.mmd"
+      - "mermaid.puppeteer.json"
+      - ".github/workflows/render-workflow-diagram.yml"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    name: Render Mermaid Diagram
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Render workflow SVG
+        run: npm run render:workflow
+
+      - name: Commit updated SVG
+        run: |
+          if git diff --quiet -- docs/workflow.svg; then
+            echo "Workflow SVG is already up to date."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/workflow.svg
+          git commit -m "docs: render workflow diagram"
+          git push

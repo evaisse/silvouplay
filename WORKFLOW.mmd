@@ -1,0 +1,35 @@
+flowchart TD
+  task[Task description]
+  mode{Interactive planning?}
+  questions[Collect goal, components, stack,<br/>constraints, completion criteria]
+  raw[Use raw task description]
+  split[Split into sub-tasks]
+  assign[Assign agent per sub-task]
+  worktrees{Use --worktrees?}
+  isolated[Create .worktrees/&lt;branch&gt; per task]
+  repo[Use current repository checkout]
+  artifacts[(Write .task-loop/plan.json<br/>and .task-loop/PRD.md)]
+  run[svp run]
+  spawn[Spawn agent CLIs in parallel]
+  save[Persist updated task statuses]
+  status[svp status]
+  caveat[Current limitation:<br/>dependencies are recorded in the plan,<br/>but execution still starts in parallel.]
+
+  task --> mode
+  mode -- yes --> questions
+  mode -- no --> raw
+  questions --> split
+  raw --> split
+  split --> assign
+  assign --> worktrees
+  worktrees -- yes --> isolated
+  worktrees -- no --> repo
+  isolated --> artifacts
+  repo --> artifacts
+  artifacts --> run
+  run --> spawn
+  spawn --> save
+  save --> artifacts
+  artifacts --> status
+  split -. plan metadata .-> caveat
+  run -. runtime behavior .-> caveat
