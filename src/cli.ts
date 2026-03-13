@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * agent-task-loop CLI
+ * svp CLI
  *
  * Commands
  *   plan   – Interactively plan a task and generate a PRD + sub-task list
@@ -98,7 +98,7 @@ async function commandPlan(opts: {
   }
 
   // 2. Run the planning session.
-  console.log(chalk.bold.cyan('\n🤖  agent-task-loop – Task Planner\n'));
+  console.log(chalk.bold.cyan('\n🤖  svp – Task Planner\n'));
 
   const plannerResult = !opts.interactive
     ? buildNonInteractivePlan(rawDescription)
@@ -174,7 +174,7 @@ async function commandPlan(opts: {
   }
   console.log('');
   console.log(
-    `Run ${chalk.bold('agent-task-loop run')} to launch agents on these tasks.`,
+    `Run ${chalk.bold('svp run')} to launch agents on these tasks.`,
   );
 }
 
@@ -247,7 +247,7 @@ function commandStatus(opts: { output: string }): void {
 const program = new Command();
 
 program
-  .name('agent-task-loop')
+  .name('svp')
   .description(
     'A parallel agent loop that plugs into any coding agent (codex, claude-code, gemini, opencode)',
   )

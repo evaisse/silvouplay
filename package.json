@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/cli.js",
   "bin": {
-    "agent-task-loop": "./dist/cli.js"
+    "svp": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
