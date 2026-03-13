@@ -137,3 +137,11 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# agent-task-loop build output
+dist/
+node_modules/
+
+# agent-task-loop runtime artefacts
+.worktrees/
+.task-loop/

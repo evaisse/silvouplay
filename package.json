@@ -1,0 +1,41 @@
+{
+  "name": "agent-task-loop",
+  "version": "0.1.0",
+  "description": "A parallel agent loop that plugs into any coding agent (codex, claude-code, gemini, opencode)",
+  "type": "module",
+  "main": "dist/cli.js",
+  "bin": {
+    "agent-task-loop": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "agent",
+    "llm",
+    "cli",
+    "coding-agent",
+    "task-planning",
+    "parallel",
+    "worktree"
+  ],
+  "author": "Emmanuel Vaïsse",
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^5.6.2",
+    "commander": "^14.0.3",
+    "fs-extra": "^11.3.4",
+    "inquirer": "^13.3.0"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  }
+}
