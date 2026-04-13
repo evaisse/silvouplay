@@ -1,14 +1,14 @@
-# agent-task-loop
+# svp
 
-`agent-task-loop` is a small CLI that turns one coding task into a persisted execution plan, splits it into parallel sub-tasks, assigns those sub-tasks to coding agents, optionally creates git worktrees, then runs the agents and tracks status.
+`svp` is a CLI agent harness built around a persisted Markdown workspace, a TDD-first execution policy, and resumable local runs. It is designed to expose the `svp` binary, detect whether the current repository already has an active project loop, and either create or continue that loop.
 
 ## What It Does
 
-The CLI revolves around three commands:
+The CLI now has two layers:
 
-- `svp plan` collects or wraps a task description, generates a `PRD.md`, and saves a machine-readable `plan.json`
-- `svp run` launches one agent process per sub-task
-- `svp status` reads the saved plan and shows the current state of each sub-task
+- `svp` launches the default wizard and inspects the current repository.
+- `svp plan`, `svp run`, and `svp status` remain expert commands.
+- `svp index` and `svp query` expose the MarkdownDB-backed document index.
 
 Supported agent backends are:
 
@@ -17,77 +17,175 @@ Supported agent backends are:
 - `gemini`
 - `opencode`
 
-## Workflow
+## Core Model
 
-![Workflow diagram](docs/workflow.svg)
+The loop stores one active project per repository inside `.task-loop/`:
 
-The source for the diagram lives in `WORKFLOW.mmd`. Run `npm run render:workflow` to regenerate the committed SVG locally. A GitHub Actions workflow also renders and commits `docs/workflow.svg` automatically whenever `WORKFLOW.mmd` changes.
+```text
+.task-loop/
+  project.md
+  state.json
+  events.jsonl
+  tasks/
+    T-001.md
+    T-002.md
+  runs/
+    <run-id>.json
+```
 
-## How It Works
+File roles:
 
-### 1. Planning
+- `project.md`: central human-readable project reference with YAML frontmatter.
+- `tasks/T-xxx.md`: one executable Markdown file per sub-task.
+- `state.json`: runtime state for attempts, active agent, fallback, timeout, and pause/failure reasons.
+- `events.jsonl`: append-only event log.
+- `runs/*.json`: persisted run snapshots.
 
-`svp plan` supports two planning modes:
+The YAML frontmatter is intentionally structured so the workspace can later be indexed cleanly by tools such as MarkdownDB.
 
-- Interactive mode asks for the goal, main components, preferred stack, constraints, and completion criteria. It also lets you choose which agents to use.
-- Non-interactive mode uses the raw task description as-is. This works best when the prompt already includes either `Components: a, b, c` or a Markdown `## Components` list.
+## Packaging
 
-The command writes its artifacts to `.task-loop/` by default:
+The package is prepared for direct publication as `svp`.
 
-- `.task-loop/plan.json`
-- `.task-loop/PRD.md`
+Expected usage after publication:
 
-### 2. Task Splitting
+```bash
+npx svp
+bunx svp
+```
 
-If the task description includes explicit components, the splitter creates one sub-task per component.
+The installed binary remains `svp`.
 
-If not, it falls back to a default breakdown:
+## TDD-First Policy
 
-- Project setup and configuration
-- Core implementation
-- Tests
-- Documentation
+The loop is opinionated: implementation should start from tests or an explicit local validation strategy.
 
-Each generated sub-task gets:
+By default, planning creates a 4-step slice for each requested change:
 
-- an id such as `task-001`
-- a branch-friendly slug
-- a status, initially `pending`
-- a shallow dependency list
+- define test scenarios
+- write failing tests
+- implement minimal code
+- refactor and harden
 
-### 3. Agent Assignment
+If a task cannot be meaningfully covered by automated tests, it still needs all of the following in its task file:
 
-Agent assignment is heuristic, not model-driven orchestration. Each sub-task is matched against the declared strengths of the available agents:
+- a `Test Exception Justification`
+- a `Risk Reduction Strategy`
+- a `Validation Plan`
 
-- `codex`: code generation, refactoring, tests, documentation
-- `claude-code`: architecture, complex reasoning, planning, code review
-- `gemini`: research, summarisation, multimodal tasks, data analysis
-- `opencode`: code editing, debugging, terminal tasks, file operations
+That rule applies to `docs` and `infra` work too. The loop never treats “not testable” as “not validated”.
 
-If no keyword match stands out, assignment falls back to round-robin distribution across the requested agents.
+## Wizard Flow
 
-### 4. Optional Git Worktrees
+Running `svp` with no sub-command inspects the repository and suggests a mode:
 
-When you pass `--worktrees` inside a git repository, `svp plan` creates one worktree per sub-task under `.worktrees/<branch>`. This gives each agent an isolated checkout while keeping one shared plan in `.task-loop/`.
+- `Create project` if no active workspace exists
+- `Continue project` if a workspace exists with open tasks
+- `Revise plan`
+- `Add task`
+- `Show status`
 
-### 5. Execution and Status
+The wizard shows the detected project title plus open and paused task counts when a project is present.
 
-`svp run` reads `plan.json` and starts every sub-task in parallel by spawning the configured agent CLI with the task title and description as the prompt.
+## Expert Commands
 
-`svp status` then reports the saved status of every task in the plan.
+### `svp plan`
 
-## Current Limitations
+Creates a new project, revises the active project, or adds a new TDD slice.
 
-- Runtime execution is fully parallel. Dependencies are recorded in the plan, but they are not enforced by the runner.
-- A failed or missing agent binary marks the corresponding task as `failed`, but the runner does not currently implement retries or resume logic.
-- Test coverage is strongest around pure planning and rendering logic. End-to-end CLI orchestration is covered by smoke tests rather than a full scheduler.
+Important behavior:
+
+- one active project per repository
+- no backward compatibility with the old `plan.json` / `PRD.md` format
+- interactive mode collects context, goal, constraints, test charter, quality gates, and agent choices
+- non-interactive mode derives a project from the raw description
+
+Examples:
+
+```bash
+svp plan --task "Ship the new harness" --agents codex,opencode --no-interactive
+svp plan --task "Add another feature slice" --mode add-task --agents codex,opencode --no-interactive
+svp plan --task "Tighten the overall scope" --mode revise-plan --agents codex,opencode --no-interactive
+```
+
+### `svp run`
+
+Runs the active project loop.
+
+Current runtime behavior:
+
+- dependency-aware execution
+- resumable state via `state.json`
+- one active task at a time for deterministic first-pass orchestration
+- timeout per task
+- automatic agent fallback for provider-like failures
+- pause when no fallback remains
+
+Fallback is attempted for reasons such as:
+
+- `quota_exceeded`
+- `rate_limited`
+- `cost_limit_reached`
+- `binary_missing`
+- `timeout`
+
+Fallback is not automatic for general implementation or validation failures.
+
+### `svp status`
+
+Shows the current project summary, open tasks, paused tasks, active agent per task, and the next ready task. If no project exists yet, it returns a friendly message instead of crashing.
+
+### `svp index`
+
+Indexes `.task-loop/project.md` and `.task-loop/tasks/*.md` into `.task-loop/markdown.db` using MarkdownDB.
+
+This also runs automatically after `svp plan` and `svp run`, so the explicit command is mainly useful for diagnostics.
+
+### `svp query`
+
+Queries the MarkdownDB index with frontmatter-based filters.
+
+Examples:
+
+```bash
+svp query --kind task
+svp query --kind task --status paused
+svp query --kind task --type tests
+svp query --kind task --test-required
+svp query --json
+```
+
+## Example Artifacts
+
+`project.md` contains:
+
+- project frontmatter
+- context
+- goal
+- constraints
+- testing policy
+- test charter
+- quality gates
+- minimal task index
+- completion criteria
+- progress log
+
+Each `tasks/T-xxx.md` contains:
+
+- task frontmatter
+- goal
+- scope
+- acceptance criteria
+- test plan
+- implementation notes
+- optional test exception sections
+- progress log
 
 ## Prerequisites
 
 - Node.js 22
 - npm
-- git, if you want `--worktrees`
-- the agent CLIs you intend to run on your `PATH`
+- the agent CLIs you want to use available on `PATH`
 
 ## Local Usage
 
@@ -97,10 +195,23 @@ Install dependencies:
 npm install
 ```
 
-Run the CLI directly from source during development:
+Use the wizard:
 
 ```bash
-npm run dev -- plan --task $'Build the feature\nComponents: tests, architecture, research, file operations' --agents codex,claude-code,gemini,opencode --no-interactive
+npm run dev
+```
+
+Run the published package once available:
+
+```bash
+npx svp
+bunx svp
+```
+
+Use expert commands directly:
+
+```bash
+npm run dev -- plan --task "Ship the new harness" --agents codex,opencode --no-interactive
 npm run dev -- run
 npm run dev -- status
 ```
@@ -109,12 +220,10 @@ Build the distributable CLI:
 
 ```bash
 npm run build
-node dist/cli.js plan --task "Improve the README" --no-interactive
+node dist/cli.js plan --task "Improve the README" --agents codex,opencode --no-interactive
 ```
 
 ## Testing The Loop
-
-### Unit And Smoke Tests
 
 Run the full automated suite:
 
@@ -130,38 +239,29 @@ npm run test:smoke
 
 The smoke tests do not require real agent CLIs. They create temporary stub binaries named `codex`, `claude`, `gemini`, and `opencode`, then exercise the real CLI through:
 
-- `plan`
-- `run`
-- `status`
-- a failing agent case
-- a missing binary case
-- a `--worktrees` case inside a temporary git repository
+- project creation
+- task execution
+- status reporting
+- MarkdownDB indexing and querying
+- fallback agent reassignment
+- add-task mode
+- revise-plan mode
 
-### Dry-Run Validation
+## Current Limitations
 
-To validate the plan and command construction without invoking real agents:
+- the runtime is intentionally sequential for now, even though the document model supports future sub-agent fan-out
+- provider cost tracking is modeled in state but not yet backed by a real provider billing integration
+- the MarkdownDB integration currently indexes the active `.task-loop` workspace only; it is not yet used to drive planning or orchestration decisions
+- the package is prepared for direct publication and execution as `svp`
 
-```bash
-npm run dev -- plan --task $'Ship a change\nComponents: tests, architecture' --agents codex,claude-code --no-interactive
-npm run dev -- run --dry-run
-npm run dev -- status
-```
+## Workflow Diagram
 
-### Manual End-To-End Check
+![Workflow diagram](docs/workflow.svg)
 
-To test against real agent CLIs:
-
-1. Ensure the chosen agent binaries are installed and available on `PATH`.
-2. Generate a plan with components that map cleanly to those agents.
-3. Run `svp run` or `npm run dev -- run`.
-4. Inspect `.task-loop/plan.json`, `.task-loop/PRD.md`, terminal output, and optional `.worktrees/` directories.
-
-## Diagram Automation
-
-Regenerate the committed SVG locally:
+The source for the diagram lives in `WORKFLOW.mmd`. Regenerate the committed SVG locally with:
 
 ```bash
 npm run render:workflow
 ```
 
-CI now targets Node 22 only. The separate render workflow keeps `docs/workflow.svg` in sync with `WORKFLOW.mmd` and commits the SVG back to the branch when it changes.
+CI targets Node 22. The separate render workflow keeps `docs/workflow.svg` in sync with `WORKFLOW.mmd` and commits the SVG back to the branch when it changes.

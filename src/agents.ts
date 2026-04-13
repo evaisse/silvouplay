@@ -1,62 +1,79 @@
-/**
- * Defines the strengths and CLI commands for each supported coding agent.
- */
-import type { AgentCapability, AgentType } from './types.js';
+export type { AgentArgument, AgentCapability, AgentDefinition, AgentRegistry } from './runtime/dsl.js';
+export { AGENTS, buildAgentCommand, getAgent, inferExitReason, isValidAgent } from './runtime/index.js';
+export { codex, claudeCode, gemini, opencode } from './runtime/index.js';
 
-export const AGENT_CAPABILITIES: AgentCapability[] = [
-  {
-    type: 'codex',
-    command: 'codex',
-    strengths: [
-      'code generation',
-      'refactoring',
-      'tests',
-      'documentation',
-      'general programming',
-    ],
-  },
-  {
-    type: 'claude-code',
-    command: 'claude',
-    strengths: [
-      'architecture',
-      'complex reasoning',
-      'code review',
-      'design patterns',
-      'planning',
-    ],
-  },
-  {
-    type: 'gemini',
-    command: 'gemini',
-    strengths: [
-      'data analysis',
-      'multimodal tasks',
-      'research',
-      'summarisation',
-      'code generation',
-    ],
-  },
-  {
-    type: 'opencode',
-    command: 'opencode',
-    strengths: [
-      'code editing',
-      'debugging',
-      'file operations',
-      'terminal tasks',
-      'general programming',
-    ],
-  },
-];
+export type { AgentType } from './types.js';
+export type { AgentCapability as LegacyAgentCapability } from './types.js';
 
-/**
- * Return the capability record for a given agent type.
- */
-export function getAgentCapability(type: AgentType): AgentCapability {
-  const cap = AGENT_CAPABILITIES.find((c) => c.type === type);
-  if (!cap) {
+import { AGENTS, isValidAgent } from './runtime/index.js';
+import type { AgentType } from './types.js';
+import type { ChecklistItem } from './types.js';
+
+export const AGENT_CAPABILITIES = Object.values(AGENTS).map((agent) => ({
+  type: agent.type,
+  command: agent.command,
+  strengths: agent.supportedTaskTypes,
+}));
+
+export function getAgentCapability(type: AgentType) {
+  const agent = AGENTS[type];
+  if (!agent) {
     throw new Error(`Unknown agent type: ${type}`);
   }
-  return cap;
+  return {
+    type: agent.type,
+    command: agent.command,
+    strengths: agent.supportedTaskTypes,
+  };
+}
+
+export function parseAgents(raw: string): AgentType[] {
+  const parsed = raw
+    .split(',')
+    .map((value) => value.trim() as AgentType)
+    .filter((value) => isValidAgent(value));
+
+  return parsed.length > 0 ? parsed : ['codex'];
+}
+
+export function choosePrimaryAgent(
+  preferred: AgentType[],
+  type: 'tests' | 'implementation' | 'refactor',
+): AgentType {
+  const priority: Record<typeof type, AgentType[]> = {
+    tests: ['codex', 'opencode', 'claude-code', 'gemini'],
+    implementation: ['opencode', 'codex', 'claude-code', 'gemini'],
+    refactor: ['claude-code', 'opencode', 'codex', 'gemini'],
+  };
+
+  const match = priority[type].find((agent) => preferred.includes(agent));
+  return match ?? preferred[0] ?? 'codex';
+}
+
+export function buildFallbackAgents(
+  preferred: AgentType[],
+  primary: AgentType,
+): AgentType[] {
+  return preferred.filter((agent) => agent !== primary);
+}
+
+export interface TaskTypePriority {
+  tests: AgentType[];
+  implementation: AgentType[];
+  refactor: AgentType[];
+}
+
+export const TASK_TYPE_PRIORITY: TaskTypePriority = {
+  tests: ['codex', 'opencode', 'claude-code', 'gemini'],
+  implementation: ['opencode', 'codex', 'claude-code', 'gemini'],
+  refactor: ['claude-code', 'opencode', 'codex', 'gemini'],
+};
+
+export function getAgentForTaskType(
+  agents: AgentType[],
+  taskType: 'tests' | 'implementation' | 'refactor',
+): AgentType {
+  const priority = TASK_TYPE_PRIORITY[taskType];
+  const match = priority.find((agent) => agents.includes(agent));
+  return match ?? agents[0] ?? 'codex';
 }

@@ -1,11 +1,19 @@
 {
-  "name": "agent-task-loop",
+  "name": "svp",
   "version": "0.1.0",
-  "description": "A parallel agent loop that plugs into any coding agent (codex, claude-code, gemini, opencode)",
+  "description": "A TDD-first agent harness CLI with resumable markdown task loops",
   "type": "module",
   "main": "dist/cli.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "bin": {
     "svp": "./dist/cli.js"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc",
@@ -23,7 +31,10 @@
     "coding-agent",
     "task-planning",
     "parallel",
-    "worktree"
+    "worktree",
+    "tdd",
+    "markdown",
+    "agent-harness"
   ],
   "author": "Emmanuel Vaïsse",
   "license": "MIT",
@@ -32,7 +43,8 @@
     "chalk": "^5.6.2",
     "commander": "^14.0.3",
     "fs-extra": "^11.3.4",
-    "inquirer": "^13.3.0"
+    "inquirer": "^13.3.0",
+    "mddb": "^0.9.5"
   },
   "devDependencies": {
     "@mermaid-js/mermaid-cli": "^11.12.0",
