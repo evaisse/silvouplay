@@ -145,3 +145,5 @@ node_modules/
 # agent-task-loop runtime artefacts
 .worktrees/
 .task-loop/
+
+.agents/
