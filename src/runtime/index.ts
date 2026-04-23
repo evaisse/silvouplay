@@ -2,6 +2,7 @@ import { codex } from './codex.js';
 import { claudeCode } from './claude-code.js';
 import { gemini } from './gemini.js';
 import { opencode } from './opencode.js';
+import { amp } from './amp.js';
 import type { AgentDefinition, AgentRegistry, AgentSpec, AgentSpecRegistry } from './dsl.js';
 import type { AgentType } from '../types.js';
 import type { ExitReason } from '../types.js';
@@ -10,49 +11,9 @@ export { codex } from './codex.js';
 export { claudeCode } from './claude-code.js';
 export { gemini } from './gemini.js';
 export { opencode } from './opencode.js';
+export { amp } from './amp.js';
 
-const BUILTIN_AGENT_SPECS: readonly AgentSpec[] = [
-  {
-    runtime: codex,
-    discovery: {
-      supportedRoles: ['orchestrator', 'worker'],
-      candidateCommands: ['codex'],
-      probeArgs: ['--version'],
-      timeoutMs: 5000,
-      supportsTokenBudget: true,
-    },
-  },
-  {
-    runtime: claudeCode,
-    discovery: {
-      supportedRoles: ['orchestrator', 'worker'],
-      candidateCommands: ['claude'],
-      probeArgs: ['--version'],
-      timeoutMs: 5000,
-      supportsTokenBudget: true,
-    },
-  },
-  {
-    runtime: gemini,
-    discovery: {
-      supportedRoles: ['worker'],
-      candidateCommands: ['gemini'],
-      probeArgs: ['--version'],
-      timeoutMs: 5000,
-      supportsTokenBudget: true,
-    },
-  },
-  {
-    runtime: opencode,
-    discovery: {
-      supportedRoles: ['orchestrator', 'worker'],
-      candidateCommands: ['opencode'],
-      probeArgs: ['--version'],
-      timeoutMs: 5000,
-      supportsTokenBudget: false,
-    },
-  },
-];
+export const BUILTIN_AGENT_SPECS = [codex, claudeCode, gemini, opencode, amp] as const satisfies readonly AgentSpec[];
 
 export function loadAgentSpecs(specs: readonly AgentSpec[]): AgentSpecRegistry {
   return Object.fromEntries(specs.map((spec) => [spec.runtime.type, spec])) as AgentSpecRegistry;

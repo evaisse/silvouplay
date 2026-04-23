@@ -1,11 +1,11 @@
 import type { AgentSpec } from './dsl.js';
 
-export const opencode: AgentSpec = {
+export const amp: AgentSpec = {
   runtime: {
-    type: 'opencode',
-    displayName: 'OpenCode',
-    command: 'opencode',
-    argsTemplate: (prompt: string) => [prompt],
+    type: 'amp',
+    displayName: 'Sourcegraph Amp',
+    command: 'amp',
+    argsTemplate: (prompt: string) => ['-x', prompt],
     supportedTaskTypes: ['tests', 'implementation', 'refactor', 'docs', 'infra'],
     exitCodeMap: {
       0: 'success',
@@ -17,7 +17,7 @@ export const opencode: AgentSpec = {
   },
   discovery: {
     supportedRoles: ['orchestrator', 'worker'],
-    candidateCommands: ['opencode'],
+    candidateCommands: ['amp'],
     probeArgs: ['--version'],
     timeoutMs: 5000,
     supportsTokenBudget: false,

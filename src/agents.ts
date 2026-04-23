@@ -13,6 +13,7 @@ export type {
 export {
   AGENTS,
   AGENT_SPECS,
+  BUILTIN_AGENT_SPECS,
   SUPPORTED_AGENT_TYPES,
   buildAgentCommand,
   getAgent,
@@ -20,7 +21,7 @@ export {
   inferExitReason,
   isValidAgent,
 } from './runtime/index.js';
-export { codex, claudeCode, gemini, opencode } from './runtime/index.js';
+export { amp, codex, claudeCode, gemini, opencode } from './runtime/index.js';
 
 export type { AgentType } from './types.js';
 export type { AgentCapability as LegacyAgentCapability } from './types.js';
