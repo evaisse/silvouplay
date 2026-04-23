@@ -1,43 +1,10 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
+import { rmSync } from 'node:fs';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import type { AgentOverrideMap, DiscoveryConfig } from '../src/runtime/dsl.js';
 import { discoverAgents } from '../src/runtime/discovery.js';
-
-function makeTempDir(prefix: string): string {
-  return mkdtempSync(path.join(os.tmpdir(), prefix));
-}
-
-function writeExecutable(binDir: string, command: string, version = '1.0.0'): string {
-  mkdirSync(binDir, { recursive: true });
-
-  const scriptPath = path.join(binDir, command);
-  writeFileSync(
-    scriptPath,
-    `#!${process.execPath}
-console.log(${JSON.stringify(`${command} ${version}`)});
-`,
-    'utf8',
-  );
-  chmodSync(scriptPath, 0o755);
-  return scriptPath;
-}
-
-function writeConfig(rootDir: string, overrides: AgentOverrideMap): string {
-  const configDir = path.join(rootDir, '.config', 'svp');
-  mkdirSync(configDir, { recursive: true });
-
-  const configPath = path.join(configDir, 'config.json');
-  const config: DiscoveryConfig = {
-    agents: overrides,
-  };
-
-  writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
-  return configPath;
-}
+import { makeTempDir, writeConfig, writeExecutable } from './test-utils.js';
 
 describe('agent discovery', () => {
   it('discovers builtin commands from PATH and reports missing agents', () => {
@@ -45,7 +12,7 @@ describe('agent discovery', () => {
     const binDir = path.join(rootDir, 'bin');
 
     try {
-      const codexPath = writeExecutable(binDir, 'codex', '1.2.3');
+      const codexPath = writeExecutable(binDir, 'codex', { version: '1.2.3' });
       const snapshot = discoverAgents({
         env: {
           PATH: binDir,
@@ -76,7 +43,7 @@ describe('agent discovery', () => {
     const binDir = path.join(rootDir, 'bin');
 
     try {
-      const codexOverridePath = writeExecutable(binDir, 'codex-config', '2.0.0');
+      const codexOverridePath = writeExecutable(binDir, 'codex-config', { version: '2.0.0' });
       const configPath = writeConfig(rootDir, {
         codex: { command: codexOverridePath },
         gemini: { enabled: false },
@@ -111,8 +78,8 @@ describe('agent discovery', () => {
     const binDir = path.join(rootDir, 'bin');
 
     try {
-      const configCommandPath = writeExecutable(binDir, 'codex-config', '2.0.0');
-      const envCommandPath = writeExecutable(binDir, 'codex-env', '3.0.0');
+      const configCommandPath = writeExecutable(binDir, 'codex-config', { version: '2.0.0' });
+      const envCommandPath = writeExecutable(binDir, 'codex-env', { version: '3.0.0' });
       const configPath = writeConfig(rootDir, {
         codex: { command: configCommandPath },
         amp: { enabled: true },
@@ -143,14 +110,42 @@ describe('agent discovery', () => {
     }
   });
 
+  it('normalizes hyphenated env keys and trims env command values', () => {
+    const rootDir = makeTempDir('svp-discovery-env-normalize-');
+    const binDir = path.join(rootDir, 'bin');
+
+    try {
+      const claudePath = writeExecutable(binDir, 'claude-env', { version: '9.9.9' });
+      const snapshot = discoverAgents({
+        env: {
+          PATH: '',
+          SVP_AGENT_CLAUDE_CODE_COMMAND: `  ${claudePath}  `,
+          SVP_AGENT_CLAUDE_CODE_ENABLED: ' YeS ',
+        },
+        configPath: path.join(rootDir, '.config', 'svp', 'config.json'),
+      });
+
+      expect(snapshot.agents['claude-code']).toMatchObject({
+        status: 'available',
+        enabled: true,
+        enabledSource: 'env',
+        commandSource: 'env',
+        resolvedCommand: claudePath,
+        version: 'claude-env 9.9.9',
+      });
+    } finally {
+      rmSync(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it('applies CLI overrides over env, config, and builtin defaults', () => {
     const rootDir = makeTempDir('svp-discovery-cli-');
     const binDir = path.join(rootDir, 'bin');
 
     try {
-      const configCommandPath = writeExecutable(binDir, 'codex-config', '2.0.0');
-      const envCommandPath = writeExecutable(binDir, 'codex-env', '3.0.0');
-      const cliCommandPath = writeExecutable(binDir, 'codex-cli', '4.0.0');
+      const configCommandPath = writeExecutable(binDir, 'codex-config', { version: '2.0.0' });
+      const envCommandPath = writeExecutable(binDir, 'codex-env', { version: '3.0.0' });
+      const cliCommandPath = writeExecutable(binDir, 'codex-cli', { version: '4.0.0' });
       const configPath = writeConfig(rootDir, {
         codex: { command: configCommandPath, enabled: false },
       });
@@ -205,6 +200,34 @@ describe('agent discovery', () => {
         status: 'missing',
         commandSource: 'builtin',
       });
+    } finally {
+      rmSync(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it('marks probe failures as misconfigured with probe output', () => {
+    const rootDir = makeTempDir('svp-discovery-probe-failure-');
+    const binDir = path.join(rootDir, 'bin');
+
+    try {
+      const ampPath = writeExecutable(binDir, 'amp-broken', {
+        probeExitCode: 2,
+        probeStderr: 'amp not initialized\n',
+      });
+      const snapshot = discoverAgents({
+        env: {
+          PATH: '',
+          SVP_AGENT_AMP_COMMAND: ampPath,
+        },
+        configPath: path.join(rootDir, '.config', 'svp', 'config.json'),
+      });
+
+      expect(snapshot.agents.amp).toMatchObject({
+        status: 'misconfigured',
+        commandSource: 'env',
+        resolvedCommand: ampPath,
+      });
+      expect(snapshot.agents.amp?.reason).toContain('amp not initialized');
     } finally {
       rmSync(rootDir, { recursive: true, force: true });
     }

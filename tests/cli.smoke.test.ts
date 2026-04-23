@@ -1,73 +1,9 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { readTask } from '../src/task-files.js';
-
-const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const CLI_ENTRY = path.join(REPO_ROOT, 'src', 'cli.ts');
-const TSX_CLI = path.join(REPO_ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs');
-
-function makeTempDir(prefix: string): string {
-  return mkdtempSync(path.join(os.tmpdir(), prefix));
-}
-
-function buildStubPath(binDir: string): string {
-  return binDir;
-}
-
-function runCli(
-  cwd: string,
-  args: string[],
-  env: NodeJS.ProcessEnv,
-): ReturnType<typeof spawnSync> {
-  const result = spawnSync(process.execPath, [TSX_CLI, CLI_ENTRY, ...args], {
-    cwd,
-    env,
-    encoding: 'utf8',
-  });
-
-  if (result.error) {
-    throw result.error;
-  }
-
-  return result;
-}
-
-function writeAgentStubs(
-  binDir: string,
-  options: {
-    commands?: string[];
-    failMap?: Record<string, number>;
-  } = {},
-): void {
-  mkdirSync(binDir, { recursive: true });
-
-  for (const command of options.commands ?? ['codex', 'claude', 'gemini', 'opencode', 'amp']) {
-    const scriptPath = path.join(binDir, command);
-    const exitCode = options.failMap?.[command] ?? 0;
-    writeFileSync(
-      scriptPath,
-      `#!${process.execPath}
-const { appendFileSync, mkdirSync } = require('node:fs');
-const path = require('node:path');
-
-const logFile = process.env.AGENT_STUB_LOG;
-if (!logFile) throw new Error('AGENT_STUB_LOG is required');
-const isProbe = process.argv.slice(2).includes('--version');
-
-mkdirSync(path.dirname(logFile), { recursive: true });
-appendFileSync(logFile, JSON.stringify({ command: path.basename(process.argv[1]), cwd: process.cwd(), prompt: process.argv.slice(2).join(' ') }) + '\\n');
-process.exit(isProbe ? 0 : ${exitCode});
-`,
-      'utf8',
-    );
-    chmodSync(scriptPath, 0o755);
-  }
-}
+import { makeTempDir, runCli, writeAgentStubs } from './test-utils.js';
 
 describe('svp CLI smoke tests', () => {
   it('creates the new project structure and runs tasks end-to-end', { timeout: 20000 }, () => {
@@ -76,7 +12,7 @@ describe('svp CLI smoke tests', () => {
     const logPath = path.join(cwd, 'agent-log.jsonl');
     const env = {
       ...process.env,
-      PATH: buildStubPath(binDir),
+      PATH: binDir,
       AGENT_STUB_LOG: logPath,
     };
 
@@ -116,7 +52,7 @@ describe('svp CLI smoke tests', () => {
     const logPath = path.join(cwd, 'agent-log.jsonl');
     const env = {
       ...process.env,
-      PATH: buildStubPath(binDir),
+      PATH: binDir,
       AGENT_STUB_LOG: logPath,
     };
 
@@ -147,7 +83,7 @@ describe('svp CLI smoke tests', () => {
     const binDir = path.join(cwd, 'bin');
     const env = {
       ...process.env,
-      PATH: buildStubPath(binDir),
+      PATH: binDir,
       AGENT_STUB_LOG: path.join(cwd, 'agent-log.jsonl'),
     };
 
@@ -197,7 +133,7 @@ describe('svp CLI smoke tests', () => {
     const binDir = path.join(cwd, 'bin');
     const env = {
       ...process.env,
-      PATH: buildStubPath(binDir),
+      PATH: binDir,
       AGENT_STUB_LOG: path.join(cwd, 'agent-log.jsonl'),
     };
 
@@ -233,7 +169,7 @@ describe('svp CLI smoke tests', () => {
     const binDir = path.join(cwd, 'bin');
     const env = {
       ...process.env,
-      PATH: buildStubPath(binDir),
+      PATH: binDir,
       AGENT_STUB_LOG: path.join(cwd, 'agent-log.jsonl'),
     };
 
@@ -267,7 +203,7 @@ describe('svp CLI smoke tests', () => {
     const binDir = path.join(cwd, 'bin');
     const env = {
       ...process.env,
-      PATH: buildStubPath(binDir),
+      PATH: binDir,
       AGENT_STUB_LOG: path.join(cwd, 'agent-log.jsonl'),
     };
 
@@ -313,7 +249,7 @@ describe('svp CLI smoke tests', () => {
         '--no-interactive',
       ], {
         ...baseEnv,
-        PATH: buildStubPath(binDir),
+        PATH: binDir,
       });
       expect(plan.status).toBe(0);
 
@@ -321,7 +257,7 @@ describe('svp CLI smoke tests', () => {
 
       const run = runCli(cwd, ['run'], {
         ...baseEnv,
-        PATH: buildStubPath(binDir),
+        PATH: binDir,
       });
       expect(run.status).toBe(0);
       expect(run.stdout).toContain('Prompt builder: local deterministic fallback');
@@ -336,7 +272,7 @@ describe('svp CLI smoke tests', () => {
     const binDir = path.join(cwd, 'bin');
     const env = {
       ...process.env,
-      PATH: buildStubPath(binDir),
+      PATH: binDir,
       AGENT_STUB_LOG: path.join(cwd, 'agent-log.jsonl'),
     };
 
@@ -358,6 +294,102 @@ describe('svp CLI smoke tests', () => {
       const query = runCli(cwd, ['query', '--kind', 'task'], env);
       expect(query.status).toBe(0);
       expect(query.stdout).toContain('task: T-001');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves default orchestrator and workers from discovery across all supported stubs', () => {
+    const cwd = makeTempDir('svp-smoke-discovery-defaults-');
+    const binDir = path.join(cwd, 'bin');
+    const env = {
+      ...process.env,
+      PATH: binDir,
+      AGENT_STUB_LOG: path.join(cwd, 'agent-log.jsonl'),
+    };
+
+    try {
+      writeAgentStubs(binDir);
+
+      const plan = runCli(cwd, [
+        'plan',
+        '--task',
+        'Exercise discovery defaults',
+        '--no-interactive',
+      ], env);
+      expect(plan.status).toBe(0);
+
+      const project = readFileSync(path.join(cwd, '.task-loop', 'project.md'), 'utf8');
+      const state = JSON.parse(readFileSync(path.join(cwd, '.task-loop', 'state.json'), 'utf8'));
+      const testsTask = readTask(path.join(cwd, '.task-loop', 'tasks', 'T-001.md'));
+      const implementationTask = readTask(path.join(cwd, '.task-loop', 'tasks', 'T-003.md'));
+      const refactorTask = readTask(path.join(cwd, '.task-loop', 'tasks', 'T-004.md'));
+
+      expect(project).toContain('orchestrator_agent: "codex"');
+      expect(project).toContain('worker_agents:');
+      expect(project).toContain('- "claude-code"');
+      expect(project).toContain('- "gemini"');
+      expect(project).toContain('- "opencode"');
+      expect(project).toContain('- "amp"');
+      expect(state.orchestratorAgent).toBe('codex');
+      expect(testsTask.primaryAgent).toBe('codex');
+      expect(testsTask.fallbackAgents).toEqual(['claude-code', 'gemini', 'opencode', 'amp']);
+      expect(implementationTask.primaryAgent).toBe('opencode');
+      expect(refactorTask.primaryAgent).toBe('claude-code');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('reads legacy runtime state before rewriting it during add-task planning', () => {
+    const cwd = makeTempDir('svp-smoke-legacy-state-rewrite-');
+    const binDir = path.join(cwd, 'bin');
+    const env = {
+      ...process.env,
+      PATH: binDir,
+      AGENT_STUB_LOG: path.join(cwd, 'agent-log.jsonl'),
+    };
+
+    try {
+      writeAgentStubs(binDir, { commands: ['codex', 'opencode'] });
+
+      expect(runCli(cwd, [
+        'plan',
+        '--task',
+        'Seed legacy state rewrite',
+        '--agents',
+        'codex,opencode',
+        '--no-interactive',
+      ], env).status).toBe(0);
+
+      const legacyStatePath = path.join(cwd, '.task-loop', 'state.json');
+      const legacyState = JSON.parse(readFileSync(legacyStatePath, 'utf8'));
+      legacyState.budgets = {
+        maxCostUsd: 42,
+        maxTaskDurationMs: legacyState.budgets.maxTaskDurationMs,
+      };
+      delete legacyState.budgets.maxTokens;
+      writeFileSync(legacyStatePath, `${JSON.stringify(legacyState, null, 2)}\n`, 'utf8');
+
+      const revise = runCli(cwd, [
+        'plan',
+        '--task',
+        'Append another slice',
+        '--mode',
+        'add-task',
+        '--agents',
+        'codex,opencode',
+        '--no-interactive',
+      ], env);
+      expect(revise.status).toBe(0);
+
+      const rewritten = readFileSync(legacyStatePath, 'utf8');
+      const parsed = JSON.parse(rewritten);
+      expect(parsed.budgets).toEqual({
+        maxTokens: null,
+        maxTaskDurationMs: 1800000,
+      });
+      expect(rewritten).not.toContain('maxCostUsd');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

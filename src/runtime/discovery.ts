@@ -150,7 +150,10 @@ function readEnvOverrides(env: NodeJS.ProcessEnv, specs: readonly AgentSpec[]): 
 
   for (const spec of specs) {
     const envKey = envKeyForAgent(spec.runtime.type);
-    const command = env[`SVP_AGENT_${envKey}_COMMAND`];
+    const rawCommand = env[`SVP_AGENT_${envKey}_COMMAND`];
+    const command = typeof rawCommand === 'string' && rawCommand.trim()
+      ? rawCommand.trim()
+      : undefined;
     const enabled = parseEnabledValue(env[`SVP_AGENT_${envKey}_ENABLED`]);
 
     if (command === undefined && enabled === undefined) {
