@@ -1,4 +1,4 @@
-export type AgentType = 'codex' | 'claude-code' | 'gemini' | 'opencode';
+export type AgentType = 'codex' | 'claude-code' | 'gemini' | 'opencode' | 'amp';
 
 export type ProjectMode = 'creation' | 'completion' | 'revise-plan' | 'add-task';
 

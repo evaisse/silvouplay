@@ -2,6 +2,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 
+import { SUPPORTED_AGENT_TYPES } from './agents.js';
 import { commandIndex, commandQuery } from './markdowndb.js';
 import { commandRun } from './orchestrator.js';
 import { commandPlan } from './plan.js';
@@ -13,11 +14,13 @@ import { runWizard } from './wizard.js';
 // ---------------------------------------------------------------------------
 
 const program = new Command();
+const supportedAgentsLabel = SUPPORTED_AGENT_TYPES.join(', ');
+const defaultAgents = SUPPORTED_AGENT_TYPES.join(',');
 
 program
   .name('svp')
   .description(
-    'A parallel agent loop that plugs into any coding agent (codex, claude-code, gemini, opencode)',
+    `A parallel agent loop that plugs into any coding agent (${supportedAgentsLabel})`,
   )
   .version('0.1.0');
 
@@ -28,7 +31,7 @@ program
   .option('-f, --file <path>', 'Path to a file containing the task description')
   .option(
     '-a, --agents <list>',
-    'Comma-separated list of agents to use (codex,claude-code,gemini,opencode)',
+    `Comma-separated list of agents to use (${defaultAgents})`,
     'codex',
   )
   .option(
@@ -113,7 +116,7 @@ program.action(async () => {
       return;
     }
     await commandPlan({
-      agents: 'codex,claude-code,gemini,opencode',
+      agents: defaultAgents,
       output: '.task-loop',
       interactive: true,
       mode: choice.mode,

@@ -1,5 +1,25 @@
-export type { AgentArgument, AgentCapability, AgentDefinition, AgentRegistry } from './runtime/dsl.js';
-export { AGENTS, buildAgentCommand, getAgent, inferExitReason, isValidAgent } from './runtime/index.js';
+export type {
+  AgentArgument,
+  AgentCapability,
+  AgentDefinition,
+  AgentDiscoverySpec,
+  AgentRegistry,
+  AgentSpec,
+  AgentSpecRegistry,
+  DiscoveredAgent,
+  DiscoverySnapshot,
+  RuntimeAgentSpec,
+} from './runtime/dsl.js';
+export {
+  AGENTS,
+  AGENT_SPECS,
+  SUPPORTED_AGENT_TYPES,
+  buildAgentCommand,
+  getAgent,
+  getAgentSpec,
+  inferExitReason,
+  isValidAgent,
+} from './runtime/index.js';
 export { codex, claudeCode, gemini, opencode } from './runtime/index.js';
 
 export type { AgentType } from './types.js';

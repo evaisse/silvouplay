@@ -3,7 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { checkbox, input, select } from '@inquirer/prompts';
 
-import { parseAgents } from './agents.js';
+import { parseAgents, SUPPORTED_AGENT_TYPES } from './agents.js';
 import { indexWorkspaceMarkdown } from './markdowndb.js';
 import { readProject, writeProject } from './project.js';
 import { createInitialState, readState, writeState } from './state.js';
@@ -118,10 +118,10 @@ async function gatherInteractiveFields(rawDescription: string, defaultAgents: Ag
 
   const chosenAgents = await checkbox({
     message: 'Agents to use',
-    choices: ['codex', 'claude-code', 'gemini', 'opencode'].map((agent) => ({
+    choices: SUPPORTED_AGENT_TYPES.map((agent) => ({
       name: agent,
       value: agent,
-      checked: defaultAgents.includes(agent as AgentType),
+      checked: defaultAgents.includes(agent),
     })),
   });
 

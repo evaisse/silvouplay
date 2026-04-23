@@ -1,3 +1,5 @@
+import type { AgentType, ExitReason, TaskType } from '../types.js';
+
 export interface AgentArgument {
   name: string;
   description: string;
@@ -9,20 +11,51 @@ export interface AgentCapability {
   command: string;
   args?: string[];
   env?: Record<string, string>;
-  supportedTaskTypes: string[];
-  exitCodeMap: Record<number, string>;
+  supportedTaskTypes: TaskType[];
+  exitCodeMap: Partial<Record<number, ExitReason>>;
   promptTemplate?: string;
 }
 
-export interface AgentDefinition {
-  type: string;
+export interface RuntimeAgentSpec {
+  type: AgentType;
   displayName: string;
   command: string;
   argsTemplate: (prompt: string) => string[];
   env?: Record<string, string>;
-  supportedTaskTypes: readonly string[];
-  exitCodeMap: Record<number, string>;
+  supportedTaskTypes: readonly TaskType[];
+  exitCodeMap: Partial<Record<number, ExitReason>>;
   maxConcurrent?: number;
 }
 
-export type AgentRegistry = Record<string, AgentDefinition>;
+export interface AgentDiscoverySpec {
+  supportedRoles: readonly ('orchestrator' | 'worker')[];
+  candidateCommands: readonly string[];
+  probeArgs: readonly string[];
+  timeoutMs: number;
+  supportsTokenBudget: boolean;
+}
+
+export interface AgentSpec {
+  runtime: RuntimeAgentSpec;
+  discovery: AgentDiscoverySpec;
+}
+
+export type DiscoveryStatus = 'available' | 'missing' | 'disabled' | 'misconfigured';
+
+export interface DiscoveredAgent {
+  type: AgentType;
+  spec: AgentSpec;
+  status: DiscoveryStatus;
+  resolvedCommand?: string;
+  reason?: string;
+  version?: string;
+}
+
+export interface DiscoverySnapshot {
+  generatedAt: string;
+  agents: Partial<Record<AgentType, DiscoveredAgent>>;
+}
+
+export type AgentDefinition = RuntimeAgentSpec;
+export type AgentRegistry = Record<string, RuntimeAgentSpec>;
+export type AgentSpecRegistry = Record<string, AgentSpec>;
