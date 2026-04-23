@@ -13,6 +13,7 @@ import { discoverAgents } from './runtime/discovery.js';
 import type { DiscoverySnapshot } from './runtime/dsl.js';
 import { resolveAgentSelection } from './runtime/selection.js';
 import type { AgentType, PlanCommandOptions, ProjectDoc, ProjectMode, TaskDoc } from './types.js';
+import { DEFAULT_EXECUTION_DEFAULTS } from './types.js';
 import { detectWorkspaceState, ensureWorkspaceDirs, resolveWorkspacePaths, sortTaskDocs, taskFiles } from './workspace.js';
 
 function nowIso(): string {
@@ -170,6 +171,7 @@ function buildProjectDoc(args: {
   failureCases: string[];
   regressionRisks: string[];
   qualityGates: string[];
+  orchestratorAgent: AgentType;
   primaryAgents: AgentType[];
   mode: ProjectMode;
 }): ProjectDoc {
@@ -184,6 +186,9 @@ function buildProjectDoc(args: {
     updatedAt: now,
     primaryAgents: args.primaryAgents,
     fallbackAgents: args.primaryAgents.slice(1),
+    orchestratorAgent: args.orchestratorAgent,
+    workerAgents: [...args.primaryAgents],
+    executionDefaults: { ...DEFAULT_EXECUTION_DEFAULTS },
     testStrategy: 'tdd-first',
     taskDir: '.task-loop/tasks',
     qualityGates: args.qualityGates,
@@ -258,6 +263,21 @@ function autoPlanDetails(rawDescription: string, agents: AgentType[]) {
 
 function buildChecklist(texts: string[]) {
   return texts.map((text) => ({ checked: false, text }));
+}
+
+function syncLegacyAgentFields(project: ProjectDoc): void {
+  project.primaryAgents = [...project.workerAgents];
+  project.fallbackAgents = project.workerAgents.slice(1);
+}
+
+function upgradeProjectDefaults(
+  project: ProjectDoc,
+  selection: { orchestrator: AgentType; workers: AgentType[] },
+  orchestratorFallback?: AgentType | null,
+): void {
+  project.orchestratorAgent ??= orchestratorFallback ?? selection.orchestrator;
+  project.workerAgents = project.workerAgents.length > 0 ? [...project.workerAgents] : [...selection.workers];
+  syncLegacyAgentFields(project);
 }
 
 async function promptCommaList(message: string, defaultValue: string): Promise<string[]> {
@@ -351,8 +371,8 @@ function buildManualValidationTask(args: {
     updatedAt: now,
     testRequired: false,
     testExceptionAllowed: true,
-    timeoutMs: 1_800_000,
-    maxAttempts: 3,
+    timeoutMs: args.project.executionDefaults.timeoutMs,
+    maxAttempts: args.project.executionDefaults.maxAttempts,
     goal: args.goal,
     scope: args.scope,
     acceptanceCriteria: buildChecklist(args.acceptanceCriteria),
@@ -480,12 +500,6 @@ async function resolveMode(
 export async function commandPlan(opts: PlanCommandOptions): Promise<void> {
   const rawDescription = await resolveRawTask(opts);
   const snapshot = discoverAgents();
-  const selection = resolveAgentSelection(
-    snapshot,
-    normalizeExplicitAgent(opts.orchestrator),
-    parseAgents(opts.workers ?? opts.agents, []),
-  );
-  const preferredAgents = selection.workers;
   const workspace = detectWorkspaceState(opts.output);
   const mode = await resolveMode(opts, workspace.hasActiveProject);
   const paths = workspace.paths;
@@ -499,6 +513,12 @@ export async function commandPlan(opts: PlanCommandOptions): Promise<void> {
   }
 
   if (mode === 'creation') {
+    const selection = resolveAgentSelection(
+      snapshot,
+      normalizeExplicitAgent(opts.orchestrator),
+      parseAgents(opts.workers ?? opts.agents, []),
+    );
+    const preferredAgents = selection.workers;
     const details = opts.interactive
       ? await gatherInteractiveFields(rawDescription, preferredAgents, snapshot)
       : autoPlanDetails(rawDescription, preferredAgents);
@@ -512,6 +532,7 @@ export async function commandPlan(opts: PlanCommandOptions): Promise<void> {
       failureCases: details.failureCases,
       regressionRisks: details.regressionRisks,
       qualityGates: details.qualityGates,
+      orchestratorAgent: selection.orchestrator,
       primaryAgents: details.agents,
       mode,
     });
@@ -529,8 +550,15 @@ export async function commandPlan(opts: PlanCommandOptions): Promise<void> {
   }
 
   const project = readProject(paths.projectFile);
+  const selection = resolveAgentSelection(
+    snapshot,
+    normalizeExplicitAgent(opts.orchestrator) ?? project.orchestratorAgent ?? undefined,
+    parseAgents(opts.workers ?? opts.agents, project.workerAgents),
+  );
+  const preferredAgents = selection.workers;
   const tasks = loadExistingTasks(paths);
-  const state = readState(paths.stateFile);
+  const state = readState(paths.stateFile, project);
+  upgradeProjectDefaults(project, selection, state.orchestratorAgent);
 
   if (mode === 'revise-plan') {
     if (opts.interactive) {
@@ -559,6 +587,9 @@ export async function commandPlan(opts: PlanCommandOptions): Promise<void> {
   const allTasks = sortTaskDocs([...tasks, ...newTasks]);
   appendProjectProgress(project, `Added task slice: ${newTasks[0]?.title ?? featureTitle}`);
   applyTaskStatuses(project, allTasks);
+  project.workerAgents = [...preferredAgents];
+  project.orchestratorAgent = state.orchestratorAgent ?? selection.orchestrator;
+  syncLegacyAgentFields(project);
   writeProject(paths.projectFile, project);
   writeTasks(paths, allTasks);
 
@@ -580,6 +611,8 @@ export async function commandPlan(opts: PlanCommandOptions): Promise<void> {
   }
   state.updatedAt = nowIso();
   state.orchestratorAgent ??= selection.orchestrator;
+  state.budgets.maxTaskDurationMs = project.executionDefaults.timeoutMs;
+  state.budgets.maxTokens = project.executionDefaults.maxTokens;
   state.currentMode = 'add-task';
   writeState(paths.stateFile, state);
   await indexWorkspaceMarkdown(opts.output);

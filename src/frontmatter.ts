@@ -1,5 +1,6 @@
 type FrontmatterPrimitive = string | number | boolean | null;
-export type FrontmatterValue = FrontmatterPrimitive | FrontmatterPrimitive[];
+type FrontmatterObject = Record<string, FrontmatterPrimitive | FrontmatterPrimitive[]>;
+export type FrontmatterValue = FrontmatterPrimitive | FrontmatterPrimitive[] | FrontmatterObject;
 
 function parseScalar(raw: string): FrontmatterPrimitive | FrontmatterPrimitive[] {
   const value = raw.trim();
@@ -72,6 +73,21 @@ export function parseFrontmatter(content: string): {
       continue;
     }
 
+    if (index + 1 < lines.length && /^\s{2}[A-Za-z0-9_]+:\s*/.test(lines[index + 1])) {
+      const objectValue: FrontmatterObject = {};
+      while (index + 1 < lines.length && /^\s{2}[A-Za-z0-9_]+:\s*/.test(lines[index + 1])) {
+        index += 1;
+        const nestedMatch = lines[index].match(/^\s{2}([A-Za-z0-9_]+):\s*(.*)$/);
+        if (!nestedMatch) {
+          throw new Error(`Invalid frontmatter line: ${lines[index]}`);
+        }
+        const [, nestedKey, nestedRest] = nestedMatch;
+        objectValue[nestedKey] = parseScalar(nestedRest);
+      }
+      data[key] = objectValue;
+      continue;
+    }
+
     const items: FrontmatterPrimitive[] = [];
     while (index + 1 < lines.length && /^\s*-\s+/.test(lines[index + 1])) {
       index += 1;
@@ -81,6 +97,10 @@ export function parseFrontmatter(content: string): {
   }
 
   return { data, body };
+}
+
+function isFrontmatterObject(value: FrontmatterValue): value is FrontmatterObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export function renderFrontmatter(data: Record<string, FrontmatterValue>): string {
@@ -95,6 +115,24 @@ export function renderFrontmatter(data: Record<string, FrontmatterValue>): strin
       lines.push(`${key}:`);
       for (const entry of value) {
         lines.push(`  - ${renderScalar(entry)}`);
+      }
+      continue;
+    }
+    if (isFrontmatterObject(value)) {
+      lines.push(`${key}:`);
+      for (const [nestedKey, nestedValue] of Object.entries(value)) {
+        if (Array.isArray(nestedValue)) {
+          if (nestedValue.length === 0) {
+            lines.push(`  ${nestedKey}: []`);
+            continue;
+          }
+          lines.push(`  ${nestedKey}:`);
+          for (const entry of nestedValue) {
+            lines.push(`    - ${renderScalar(entry)}`);
+          }
+          continue;
+        }
+        lines.push(`  ${nestedKey}: ${renderScalar(nestedValue)}`);
       }
       continue;
     }

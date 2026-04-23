@@ -9,9 +9,41 @@ import type {
   TaskRuntimeState,
   TaskStatus,
 } from './types.js';
+import { DEFAULT_EXECUTION_DEFAULTS } from './types.js';
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function buildStateBudgets(project?: ProjectDoc): ProjectState['budgets'] {
+  const executionDefaults = project?.executionDefaults ?? DEFAULT_EXECUTION_DEFAULTS;
+  return {
+    maxTokens: executionDefaults.maxTokens,
+    maxTaskDurationMs: executionDefaults.timeoutMs,
+  };
+}
+
+function normalizeState(raw: Partial<ProjectState> & {
+  budgets?: {
+    maxTokens?: number | null;
+    maxTaskDurationMs?: number;
+    maxCostUsd?: number | null;
+  };
+}, project?: ProjectDoc): ProjectState {
+  return {
+    projectId: raw.projectId ?? project?.projectId ?? '',
+    status: raw.status ?? 'active',
+    currentMode: raw.currentMode ?? project?.mode ?? 'creation',
+    createdAt: raw.createdAt ?? nowIso(),
+    updatedAt: raw.updatedAt ?? nowIso(),
+    lastRunId: raw.lastRunId ?? null,
+    orchestratorAgent: raw.orchestratorAgent ?? project?.orchestratorAgent ?? null,
+    budgets: {
+      maxTokens: raw.budgets?.maxTokens ?? buildStateBudgets(project).maxTokens,
+      maxTaskDurationMs: raw.budgets?.maxTaskDurationMs ?? buildStateBudgets(project).maxTaskDurationMs,
+    },
+    tasks: raw.tasks ?? {},
+  };
 }
 
 export function createTaskRuntimeState(task: TaskDoc): TaskRuntimeState {
@@ -45,18 +77,15 @@ export function createInitialState(
     updatedAt: nowIso(),
     lastRunId: null,
     orchestratorAgent,
-    budgets: {
-      maxCostUsd: null,
-      maxTaskDurationMs: 1800000,
-    },
+    budgets: buildStateBudgets(project),
     tasks: Object.fromEntries(
       tasks.map((task) => [task.taskId, createTaskRuntimeState(task)]),
     ),
   };
 }
 
-export function readState(stateFile: string): ProjectState {
-  return JSON.parse(readFileSync(stateFile, 'utf8')) as ProjectState;
+export function readState(stateFile: string, project?: ProjectDoc): ProjectState {
+  return normalizeState(JSON.parse(readFileSync(stateFile, 'utf8')) as ProjectState, project);
 }
 
 export function writeState(stateFile: string, state: ProjectState): void {
@@ -74,7 +103,7 @@ export function loadOrCreateState(
     writeState(stateFile, state);
     return state;
   }
-  return readState(stateFile);
+  return readState(stateFile, project);
 }
 
 function depsComplete(task: TaskDoc, state: ProjectState): boolean {
@@ -86,7 +115,9 @@ export function syncRuntimeState(
   tasks: TaskDoc[],
   state: ProjectState,
 ): ProjectState {
-  state.orchestratorAgent ??= null;
+  state.orchestratorAgent ??= project.orchestratorAgent ?? null;
+  state.budgets.maxTokens ??= project.executionDefaults.maxTokens;
+  state.budgets.maxTaskDurationMs ??= project.executionDefaults.timeoutMs;
 
   for (const task of tasks) {
     state.tasks[task.taskId] ??= createTaskRuntimeState(task);

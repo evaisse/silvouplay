@@ -10,6 +10,7 @@ function buildCriteria(items: string[]): ChecklistItem[] {
 }
 
 function buildTaskDoc(args: {
+  project: ProjectDoc;
   projectId: string;
   taskId: string;
   title: string;
@@ -41,8 +42,8 @@ function buildTaskDoc(args: {
     updatedAt: now,
     testRequired: true,
     testExceptionAllowed: false,
-    timeoutMs: 1_800_000,
-    maxAttempts: 3,
+    timeoutMs: args.project.executionDefaults.timeoutMs,
+    maxAttempts: args.project.executionDefaults.maxAttempts,
     goal: args.goal,
     scope: args.scope,
     acceptanceCriteria: buildCriteria(args.acceptanceCriteria),
@@ -78,6 +79,7 @@ export function buildDefaultTddTasks(
 
   return [
     buildTaskDoc({
+      project,
       projectId: project.projectId,
       taskId: t1,
       title: `Define test scenarios for ${featureTitle}`,
@@ -103,6 +105,7 @@ export function buildDefaultTddTasks(
       ],
     }),
     buildTaskDoc({
+      project,
       projectId: project.projectId,
       taskId: t2,
       title: `Write failing tests for ${featureTitle}`,
@@ -127,6 +130,7 @@ export function buildDefaultTddTasks(
       ],
     }),
     buildTaskDoc({
+      project,
       projectId: project.projectId,
       taskId: t3,
       title: `Implement minimal code for ${featureTitle}`,
@@ -153,6 +157,7 @@ export function buildDefaultTddTasks(
       ],
     }),
     buildTaskDoc({
+      project,
       projectId: project.projectId,
       taskId: t4,
       title: `Refactor and harden ${featureTitle}`,

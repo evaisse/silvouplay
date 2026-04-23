@@ -51,6 +51,18 @@ export interface TestCharter {
   regressionRisks: string[];
 }
 
+export interface ExecutionDefaults {
+  timeoutMs: number;
+  maxAttempts: number;
+  maxTokens: number | null;
+}
+
+export const DEFAULT_EXECUTION_DEFAULTS: ExecutionDefaults = {
+  timeoutMs: 1_800_000,
+  maxAttempts: 3,
+  maxTokens: null,
+};
+
 export interface ProjectDoc {
   svpVersion: number;
   projectId: string;
@@ -61,6 +73,9 @@ export interface ProjectDoc {
   updatedAt: string;
   primaryAgents: AgentType[];
   fallbackAgents: AgentType[];
+  orchestratorAgent: AgentType | null;
+  workerAgents: AgentType[];
+  executionDefaults: ExecutionDefaults;
   testStrategy: 'tdd-first';
   taskDir: string;
   qualityGates: string[];
@@ -128,7 +143,7 @@ export interface ProjectState {
   lastRunId: string | null;
   orchestratorAgent: AgentType | null;
   budgets: {
-    maxCostUsd: number | null;
+    maxTokens: number | null;
     maxTaskDurationMs: number;
   };
   tasks: Record<string, TaskRuntimeState>;

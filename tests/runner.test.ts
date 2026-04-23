@@ -13,6 +13,13 @@ const PROJECT: ProjectDoc = {
   updatedAt: '2026-04-12T10:00:00.000Z',
   primaryAgents: ['codex'],
   fallbackAgents: [],
+  orchestratorAgent: 'codex',
+  workerAgents: ['codex'],
+  executionDefaults: {
+    timeoutMs: 1800000,
+    maxAttempts: 3,
+    maxTokens: null,
+  },
   testStrategy: 'tdd-first',
   taskDir: '.task-loop/tasks',
   qualityGates: ['npm test'],

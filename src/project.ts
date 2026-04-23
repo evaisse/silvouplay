@@ -7,6 +7,7 @@ import type {
   ProjectDoc,
   ProjectStatus,
 } from './types.js';
+import { DEFAULT_EXECUTION_DEFAULTS } from './types.js';
 
 function parseChecklist(lines: string[]): ChecklistItem[] {
   return lines
@@ -95,6 +96,21 @@ function requireStringArray(
   return value as string[];
 }
 
+function parseExecutionDefaults(value: unknown): ProjectDoc['executionDefaults'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { ...DEFAULT_EXECUTION_DEFAULTS };
+  }
+
+  const raw = value as Record<string, unknown>;
+  return {
+    timeoutMs: Number(raw.timeout_ms ?? DEFAULT_EXECUTION_DEFAULTS.timeoutMs),
+    maxAttempts: Number(raw.max_attempts ?? DEFAULT_EXECUTION_DEFAULTS.maxAttempts),
+    maxTokens: raw.max_tokens === null || raw.max_tokens === undefined
+      ? DEFAULT_EXECUTION_DEFAULTS.maxTokens
+      : Number(raw.max_tokens),
+  };
+}
+
 export function renderProject(doc: ProjectDoc): string {
   const lines: string[] = [];
   lines.push(
@@ -109,6 +125,13 @@ export function renderProject(doc: ProjectDoc): string {
       updated_at: doc.updatedAt,
       primary_agents: doc.primaryAgents,
       fallback_agents: doc.fallbackAgents,
+      orchestrator_agent: doc.orchestratorAgent,
+      worker_agents: doc.workerAgents,
+      execution_defaults: {
+        timeout_ms: doc.executionDefaults.timeoutMs,
+        max_attempts: doc.executionDefaults.maxAttempts,
+        max_tokens: doc.executionDefaults.maxTokens,
+      },
       test_strategy: doc.testStrategy,
       task_dir: doc.taskDir,
       quality_gates: doc.qualityGates,
@@ -172,6 +195,11 @@ export function parseProject(content: string): ProjectDoc {
     updatedAt: String(data.updated_at ?? ''),
     primaryAgents: requireStringArray(data.primary_agents, 'primary_agents') as AgentType[],
     fallbackAgents: requireStringArray(data.fallback_agents, 'fallback_agents') as AgentType[],
+    orchestratorAgent: (data.orchestrator_agent ?? null) as AgentType | null,
+    workerAgents: (Array.isArray(data.worker_agents)
+      ? requireStringArray(data.worker_agents, 'worker_agents')
+      : requireStringArray(data.primary_agents, 'primary_agents')) as AgentType[],
+    executionDefaults: parseExecutionDefaults(data.execution_defaults),
     testStrategy: 'tdd-first',
     taskDir: String(data.task_dir ?? '.task-loop/tasks'),
     qualityGates: requireStringArray(data.quality_gates, 'quality_gates'),
