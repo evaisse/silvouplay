@@ -41,11 +41,27 @@ export interface AgentSpec {
 }
 
 export type DiscoveryStatus = 'available' | 'missing' | 'disabled' | 'misconfigured';
+export type DiscoveryOverrideSource = 'builtin' | 'config' | 'env' | 'cli';
+
+export interface AgentOverride {
+  command?: string;
+  enabled?: boolean;
+}
+
+export type AgentOverrideMap = Partial<Record<AgentType, AgentOverride>>;
+
+export interface DiscoveryConfig {
+  agents?: AgentOverrideMap;
+}
 
 export interface DiscoveredAgent {
   type: AgentType;
   spec: AgentSpec;
   status: DiscoveryStatus;
+  enabled: boolean;
+  enabledSource: DiscoveryOverrideSource;
+  commandSource: DiscoveryOverrideSource;
+  requestedCommand?: string;
   resolvedCommand?: string;
   reason?: string;
   version?: string;

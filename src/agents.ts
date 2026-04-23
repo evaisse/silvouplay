@@ -1,4 +1,6 @@
 export type {
+  AgentOverride,
+  AgentOverrideMap,
   AgentArgument,
   AgentCapability,
   AgentDefinition,
@@ -6,10 +8,13 @@ export type {
   AgentRegistry,
   AgentSpec,
   AgentSpecRegistry,
+  DiscoveryConfig,
+  DiscoveryOverrideSource,
   DiscoveredAgent,
   DiscoverySnapshot,
   RuntimeAgentSpec,
 } from './runtime/dsl.js';
+export { DEFAULT_CONFIG_PATH, discoverAgents } from './runtime/discovery.js';
 export {
   AGENTS,
   AGENT_SPECS,
