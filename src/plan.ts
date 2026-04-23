@@ -3,12 +3,15 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { checkbox, input, select } from '@inquirer/prompts';
 
-import { parseAgents, SUPPORTED_AGENT_TYPES } from './agents.js';
+import { isValidAgent, parseAgents, SUPPORTED_AGENT_TYPES } from './agents.js';
 import { indexWorkspaceMarkdown } from './markdowndb.js';
 import { readProject, writeProject } from './project.js';
 import { createInitialState, readState, writeState } from './state.js';
 import { writeTask, readTask } from './task-files.js';
 import { applyTaskStatuses, buildDefaultTddTasks } from './tdd.js';
+import { discoverAgents } from './runtime/discovery.js';
+import type { DiscoverySnapshot } from './runtime/dsl.js';
+import { resolveAgentSelection } from './runtime/selection.js';
 import type { AgentType, PlanCommandOptions, ProjectDoc, ProjectMode, TaskDoc } from './types.js';
 import { detectWorkspaceState, ensureWorkspaceDirs, resolveWorkspacePaths, sortTaskDocs, taskFiles } from './workspace.js';
 
@@ -50,7 +53,23 @@ async function resolveRawTask(opts: PlanCommandOptions): Promise<string> {
   })).trim();
 }
 
-async function gatherInteractiveFields(rawDescription: string, defaultAgents: AgentType[]): Promise<{
+function normalizeExplicitAgent(raw: string | undefined): AgentType | undefined {
+  if (!raw?.trim()) {
+    return undefined;
+  }
+
+  if (!isValidAgent(raw.trim())) {
+    throw new Error(`Unknown agent type: ${raw}`);
+  }
+
+  return raw.trim() as AgentType;
+}
+
+async function gatherInteractiveFields(
+  rawDescription: string,
+  defaultAgents: AgentType[],
+  snapshot: DiscoverySnapshot,
+): Promise<{
   title: string;
   context: string;
   goal: string;
@@ -122,6 +141,9 @@ async function gatherInteractiveFields(rawDescription: string, defaultAgents: Ag
       name: agent,
       value: agent,
       checked: defaultAgents.includes(agent),
+      disabled: snapshot.agents[agent]?.status === 'available'
+        ? false
+        : snapshot.agents[agent]?.reason ?? `Agent is ${snapshot.agents[agent]?.status ?? 'unavailable'}.`,
     })),
   });
 
@@ -457,7 +479,13 @@ async function resolveMode(
 
 export async function commandPlan(opts: PlanCommandOptions): Promise<void> {
   const rawDescription = await resolveRawTask(opts);
-  const preferredAgents = parseAgents(opts.agents);
+  const snapshot = discoverAgents();
+  const selection = resolveAgentSelection(
+    snapshot,
+    normalizeExplicitAgent(opts.orchestrator),
+    parseAgents(opts.workers ?? opts.agents, []),
+  );
+  const preferredAgents = selection.workers;
   const workspace = detectWorkspaceState(opts.output);
   const mode = await resolveMode(opts, workspace.hasActiveProject);
   const paths = workspace.paths;
@@ -472,7 +500,7 @@ export async function commandPlan(opts: PlanCommandOptions): Promise<void> {
 
   if (mode === 'creation') {
     const details = opts.interactive
-      ? await gatherInteractiveFields(rawDescription, preferredAgents)
+      ? await gatherInteractiveFields(rawDescription, preferredAgents, snapshot)
       : autoPlanDetails(rawDescription, preferredAgents);
     const project = buildProjectDoc({
       projectId: randomUUID(),
@@ -491,7 +519,7 @@ export async function commandPlan(opts: PlanCommandOptions): Promise<void> {
     applyTaskStatuses(project, tasks);
     writeProject(paths.projectFile, project);
     writeTasks(paths, tasks);
-    writeState(paths.stateFile, createInitialState(project, tasks, mode));
+    writeState(paths.stateFile, createInitialState(project, tasks, mode, selection.orchestrator));
     await indexWorkspaceMarkdown(opts.output);
 
     process.stdout.write(
@@ -551,6 +579,7 @@ export async function commandPlan(opts: PlanCommandOptions): Promise<void> {
     };
   }
   state.updatedAt = nowIso();
+  state.orchestratorAgent ??= selection.orchestrator;
   state.currentMode = 'add-task';
   writeState(paths.stateFile, state);
   await indexWorkspaceMarkdown(opts.output);

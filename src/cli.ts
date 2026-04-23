@@ -2,7 +2,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 
-import { SUPPORTED_AGENT_TYPES } from './agents.js';
+import { isValidAgent, SUPPORTED_AGENT_TYPES } from './agents.js';
 import { commandIndex, commandQuery } from './markdowndb.js';
 import { commandRun } from './orchestrator.js';
 import { commandPlan } from './plan.js';
@@ -15,7 +15,6 @@ import { runWizard } from './wizard.js';
 
 const program = new Command();
 const supportedAgentsLabel = SUPPORTED_AGENT_TYPES.join(', ');
-const defaultAgents = SUPPORTED_AGENT_TYPES.join(',');
 
 program
   .name('svp')
@@ -29,11 +28,9 @@ program
   .description('Create, revise, or extend the active project plan')
   .option('-t, --task <description>', 'Inline task description')
   .option('-f, --file <path>', 'Path to a file containing the task description')
-  .option(
-    '-a, --agents <list>',
-    `Comma-separated list of agents to use (${defaultAgents})`,
-    'codex',
-  )
+  .option('--orchestrator <agent>', `Orchestrator agent to use (${supportedAgentsLabel})`)
+  .option('-w, --workers <list>', 'Comma-separated list of worker agents to use')
+  .option('-a, --agents <list>', 'Compatibility alias for --workers')
   .option(
     '-o, --output <dir>',
     'Output directory for plan artefacts',
@@ -47,7 +44,16 @@ program
     '-m, --mode <mode>',
     'Planning mode (creation, revise-plan, add-task)',
   )
-  .action(commandPlan);
+  .action((opts) => {
+    if (opts.orchestrator && !isValidAgent(opts.orchestrator)) {
+      throw new Error(`Unknown orchestrator agent: ${opts.orchestrator}`);
+    }
+
+    return commandPlan({
+      ...opts,
+      workers: opts.workers ?? opts.agents,
+    });
+  });
 
 program
   .command('run')
@@ -116,7 +122,6 @@ program.action(async () => {
       return;
     }
     await commandPlan({
-      agents: defaultAgents,
       output: '.task-loop',
       interactive: true,
       mode: choice.mode,

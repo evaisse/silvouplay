@@ -126,6 +126,7 @@ export interface ProjectState {
   createdAt: string;
   updatedAt: string;
   lastRunId: string | null;
+  orchestratorAgent: AgentType | null;
   budgets: {
     maxCostUsd: number | null;
     maxTaskDurationMs: number;
@@ -156,7 +157,9 @@ export interface WorkspaceState {
 export interface PlanCommandOptions {
   task?: string;
   file?: string;
-  agents: string;
+  orchestrator?: string;
+  workers?: string;
+  agents?: string;
   output: string;
   interactive: boolean;
   mode?: ProjectMode;
@@ -177,6 +180,9 @@ export interface RunSummary {
   pausedTaskIds: string[];
   failedTaskIds: string[];
   fallbackTaskIds: string[];
+  orchestratorAgent: AgentType | null;
+  promptBuilder: 'local-deterministic';
+  orchestratorFallbackReason: string | null;
 }
 
 export interface MarkdownIndexSummary {

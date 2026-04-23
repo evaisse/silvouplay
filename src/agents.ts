@@ -53,13 +53,17 @@ export function getAgentCapability(type: AgentType) {
   };
 }
 
-export function parseAgents(raw: string): AgentType[] {
+export function parseAgents(raw: string | undefined, fallback: AgentType[] = ['codex']): AgentType[] {
+  if (!raw?.trim()) {
+    return [...fallback];
+  }
+
   const parsed = raw
     .split(',')
     .map((value) => value.trim() as AgentType)
     .filter((value) => isValidAgent(value));
 
-  return parsed.length > 0 ? parsed : ['codex'];
+  return parsed.length > 0 ? parsed : [...fallback];
 }
 
 export function choosePrimaryAgent(

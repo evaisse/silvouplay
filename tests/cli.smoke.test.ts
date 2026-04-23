@@ -5,12 +5,18 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
+import { readTask } from '../src/task-files.js';
+
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CLI_ENTRY = path.join(REPO_ROOT, 'src', 'cli.ts');
 const TSX_CLI = path.join(REPO_ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs');
 
 function makeTempDir(prefix: string): string {
   return mkdtempSync(path.join(os.tmpdir(), prefix));
+}
+
+function buildStubPath(binDir: string): string {
+  return binDir;
 }
 
 function runCli(
@@ -31,10 +37,16 @@ function runCli(
   return result;
 }
 
-function writeAgentStubs(binDir: string, options: { failMap?: Record<string, number> } = {}): void {
+function writeAgentStubs(
+  binDir: string,
+  options: {
+    commands?: string[];
+    failMap?: Record<string, number>;
+  } = {},
+): void {
   mkdirSync(binDir, { recursive: true });
 
-  for (const command of ['codex', 'claude', 'gemini', 'opencode']) {
+  for (const command of options.commands ?? ['codex', 'claude', 'gemini', 'opencode', 'amp']) {
     const scriptPath = path.join(binDir, command);
     const exitCode = options.failMap?.[command] ?? 0;
     writeFileSync(
@@ -45,10 +57,11 @@ const path = require('node:path');
 
 const logFile = process.env.AGENT_STUB_LOG;
 if (!logFile) throw new Error('AGENT_STUB_LOG is required');
+const isProbe = process.argv.slice(2).includes('--version');
 
 mkdirSync(path.dirname(logFile), { recursive: true });
 appendFileSync(logFile, JSON.stringify({ command: path.basename(process.argv[1]), cwd: process.cwd(), prompt: process.argv.slice(2).join(' ') }) + '\\n');
-process.exit(${exitCode});
+process.exit(isProbe ? 0 : ${exitCode});
 `,
       'utf8',
     );
@@ -63,7 +76,7 @@ describe('svp CLI smoke tests', () => {
     const logPath = path.join(cwd, 'agent-log.jsonl');
     const env = {
       ...process.env,
-      PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+      PATH: buildStubPath(binDir),
       AGENT_STUB_LOG: logPath,
     };
 
@@ -103,7 +116,7 @@ describe('svp CLI smoke tests', () => {
     const logPath = path.join(cwd, 'agent-log.jsonl');
     const env = {
       ...process.env,
-      PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+      PATH: buildStubPath(binDir),
       AGENT_STUB_LOG: logPath,
     };
 
@@ -134,7 +147,7 @@ describe('svp CLI smoke tests', () => {
     const binDir = path.join(cwd, 'bin');
     const env = {
       ...process.env,
-      PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+      PATH: buildStubPath(binDir),
       AGENT_STUB_LOG: path.join(cwd, 'agent-log.jsonl'),
     };
 
@@ -179,12 +192,151 @@ describe('svp CLI smoke tests', () => {
     }
   });
 
+  it('supports explicit orchestrator and worker selection', () => {
+    const cwd = makeTempDir('svp-smoke-worker-selection-');
+    const binDir = path.join(cwd, 'bin');
+    const env = {
+      ...process.env,
+      PATH: buildStubPath(binDir),
+      AGENT_STUB_LOG: path.join(cwd, 'agent-log.jsonl'),
+    };
+
+    try {
+      writeAgentStubs(binDir, { commands: ['codex', 'opencode'] });
+
+      const plan = runCli(cwd, [
+        'plan',
+        '--task',
+        'Use discovery-backed worker selection',
+        '--orchestrator',
+        'codex',
+        '--workers',
+        'opencode',
+        '--no-interactive',
+      ], env);
+      expect(plan.status).toBe(0);
+
+      const state = JSON.parse(readFileSync(path.join(cwd, '.task-loop', 'state.json'), 'utf8'));
+      expect(state.orchestratorAgent).toBe('codex');
+
+      const testsTask = readTask(path.join(cwd, '.task-loop', 'tasks', 'T-001.md'));
+      const implementationTask = readTask(path.join(cwd, '.task-loop', 'tasks', 'T-003.md'));
+      expect(testsTask.primaryAgent).toBe('opencode');
+      expect(implementationTask.primaryAgent).toBe('opencode');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps --agents as a compatibility alias for --workers', () => {
+    const cwd = makeTempDir('svp-smoke-agents-alias-');
+    const binDir = path.join(cwd, 'bin');
+    const env = {
+      ...process.env,
+      PATH: buildStubPath(binDir),
+      AGENT_STUB_LOG: path.join(cwd, 'agent-log.jsonl'),
+    };
+
+    try {
+      writeAgentStubs(binDir, { commands: ['codex', 'opencode'] });
+
+      const plan = runCli(cwd, [
+        'plan',
+        '--task',
+        'Use legacy workers alias',
+        '--orchestrator',
+        'codex',
+        '--agents',
+        'opencode',
+        '--no-interactive',
+      ], env);
+      expect(plan.status).toBe(0);
+
+      const state = JSON.parse(readFileSync(path.join(cwd, '.task-loop', 'state.json'), 'utf8'));
+      expect(state.orchestratorAgent).toBe('codex');
+
+      const testsTask = readTask(path.join(cwd, '.task-loop', 'tasks', 'T-001.md'));
+      expect(testsTask.primaryAgent).toBe('opencode');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('fails fast when the selected orchestrator is unavailable', () => {
+    const cwd = makeTempDir('svp-smoke-orchestrator-validation-');
+    const binDir = path.join(cwd, 'bin');
+    const env = {
+      ...process.env,
+      PATH: buildStubPath(binDir),
+      AGENT_STUB_LOG: path.join(cwd, 'agent-log.jsonl'),
+    };
+
+    try {
+      writeAgentStubs(binDir, { commands: ['opencode'] });
+
+      const plan = runCli(cwd, [
+        'plan',
+        '--task',
+        'Validate orchestrator availability',
+        '--orchestrator',
+        'codex',
+        '--workers',
+        'opencode',
+        '--no-interactive',
+      ], env);
+      expect(plan.status).toBe(1);
+      expect(plan.stderr).toContain('Selected orchestrator codex is not currently available');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to the local prompt builder when the planned orchestrator disappears', () => {
+    const cwd = makeTempDir('svp-smoke-orchestrator-fallback-');
+    const binDir = path.join(cwd, 'bin');
+    const baseEnv = {
+      ...process.env,
+      AGENT_STUB_LOG: path.join(cwd, 'agent-log.jsonl'),
+    };
+
+    try {
+      writeAgentStubs(binDir, { commands: ['codex', 'opencode'] });
+
+      const plan = runCli(cwd, [
+        'plan',
+        '--task',
+        'Keep worker execution stable',
+        '--orchestrator',
+        'codex',
+        '--workers',
+        'opencode',
+        '--no-interactive',
+      ], {
+        ...baseEnv,
+        PATH: buildStubPath(binDir),
+      });
+      expect(plan.status).toBe(0);
+
+      rmSync(path.join(binDir, 'codex'));
+
+      const run = runCli(cwd, ['run'], {
+        ...baseEnv,
+        PATH: buildStubPath(binDir),
+      });
+      expect(run.status).toBe(0);
+      expect(run.stdout).toContain('Prompt builder: local deterministic fallback');
+      expect(run.stdout).toContain('codex');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it('indexes and queries the markdown workspace from the CLI', () => {
     const cwd = makeTempDir('svp-smoke-index-query-');
     const binDir = path.join(cwd, 'bin');
     const env = {
       ...process.env,
-      PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+      PATH: buildStubPath(binDir),
       AGENT_STUB_LOG: path.join(cwd, 'agent-log.jsonl'),
     };
 

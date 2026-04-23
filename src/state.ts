@@ -35,6 +35,7 @@ export function createInitialState(
   project: ProjectDoc,
   tasks: TaskDoc[],
   mode: ProjectMode,
+  orchestratorAgent: TaskDoc['primaryAgent'] | null = null,
 ): ProjectState {
   return {
     projectId: project.projectId,
@@ -43,6 +44,7 @@ export function createInitialState(
     createdAt: nowIso(),
     updatedAt: nowIso(),
     lastRunId: null,
+    orchestratorAgent,
     budgets: {
       maxCostUsd: null,
       maxTaskDurationMs: 1800000,
@@ -84,6 +86,8 @@ export function syncRuntimeState(
   tasks: TaskDoc[],
   state: ProjectState,
 ): ProjectState {
+  state.orchestratorAgent ??= null;
+
   for (const task of tasks) {
     state.tasks[task.taskId] ??= createTaskRuntimeState(task);
     const runtime = state.tasks[task.taskId];

@@ -3,6 +3,8 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 import { appendEvent, writeRunSnapshot } from './events.js';
+import { discoverAgents } from './runtime/discovery.js';
+import { validateAgentRoleAvailability } from './runtime/selection.js';
 import { chooseFallbackAgent, isFallbackReason } from './fallback.js';
 import { indexWorkspaceMarkdown } from './markdowndb.js';
 import { readProject, writeProject } from './project.js';
@@ -67,12 +69,18 @@ function nextReadyTask(tasks: TaskDoc[], state: ProjectState): TaskDoc | undefin
 export async function runProject(outputDir = '.task-loop'): Promise<RunSummary> {
   const runId = randomUUID();
   const { project, tasks, state, paths } = loadArtifacts(outputDir);
+  const orchestratorFallbackReason = state.orchestratorAgent
+    ? validateAgentRoleAvailability(discoverAgents(), state.orchestratorAgent, 'orchestrator')
+    : null;
   const summary: RunSummary = {
     runId,
     completedTaskIds: [],
     pausedTaskIds: [],
     failedTaskIds: [],
     fallbackTaskIds: [],
+    orchestratorAgent: state.orchestratorAgent ?? null,
+    promptBuilder: 'local-deterministic',
+    orchestratorFallbackReason,
   };
 
   appendEvent(paths.eventsFile, {
@@ -80,6 +88,16 @@ export async function runProject(outputDir = '.task-loop'): Promise<RunSummary> 
     runId,
     projectId: project.projectId,
   });
+
+  if (orchestratorFallbackReason && state.orchestratorAgent) {
+    appendEvent(paths.eventsFile, {
+      type: 'orchestrator_fallback',
+      runId,
+      orchestratorAgent: state.orchestratorAgent,
+      promptBuilder: 'local-deterministic',
+      reason: orchestratorFallbackReason,
+    });
+  }
 
   while (true) {
     syncRuntimeState(project, tasks, state);
@@ -194,6 +212,9 @@ export async function commandRun(opts: { output: string }): Promise<void> {
   const lines = [
     '',
     `Run ${summary.runId}`,
+    ...(summary.orchestratorFallbackReason && summary.orchestratorAgent
+      ? [`Prompt builder: local deterministic fallback (${summary.orchestratorAgent}: ${summary.orchestratorFallbackReason})`]
+      : []),
     `Completed: ${summary.completedTaskIds.length}`,
     `Paused: ${summary.pausedTaskIds.length}`,
     `Failed: ${summary.failedTaskIds.length}`,
