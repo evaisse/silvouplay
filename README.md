@@ -16,6 +16,7 @@ Supported agent backends are:
 - `claude-code`
 - `gemini`
 - `opencode`
+- `amp`
 
 ## Core Model
 
@@ -85,7 +86,75 @@ Running `svp` with no sub-command inspects the repository and suggests a mode:
 - `Add task`
 - `Show status`
 
-The wizard shows the detected project title plus open and paused task counts when a project is present.
+The wizard summary is discovery-driven, and project creation reuses the same discovery snapshot to choose defaults for the orchestrator, worker pool, and execution settings.
+
+Canonical transcript:
+
+<!-- wizard-transcript:start -->
+```text
+$ svp
+? No active project detected
+  Available orchestrators: codex, claude-code, opencode, amp
+  Available workers: codex, claude-code, gemini, opencode, amp
+  Unavailable agents: none
+❯ Create project
+
+Default orchestrator: codex
+Default workers: codex, claude-code, gemini, opencode, amp
+Execution defaults:
+- timeoutMs: 1800000
+- maxAttempts: 3
+- maxTokens: null
+```
+<!-- wizard-transcript:end -->
+
+Default selection rules:
+
+- the first available orchestrator from discovery becomes the project orchestrator
+- all available workers become the default worker pool unless `--workers` or `--agents` overrides them
+- execution defaults are persisted as `timeoutMs: 1800000`, `maxAttempts: 3`, and `maxTokens: null`
+
+## Global Agent Config
+
+Discovery reads global machine overrides from `~/.config/svp/config.json`.
+
+Example:
+
+```json
+{
+  "agents": {
+    "codex": {
+      "command": "/opt/homebrew/bin/codex"
+    },
+    "claude-code": {
+      "command": "/opt/homebrew/bin/claude"
+    },
+    "gemini": {
+      "enabled": false
+    }
+  }
+}
+```
+
+Supported keys per agent:
+
+- `command`: replace the builtin command name with an explicit binary path or command
+- `enabled`: force the agent on or off
+
+Supported environment overrides:
+
+- `SVP_AGENT_CODEX_COMMAND`
+- `SVP_AGENT_CODEX_ENABLED`
+- `SVP_AGENT_CLAUDE_CODE_COMMAND`
+- `SVP_AGENT_CLAUDE_CODE_ENABLED`
+- `SVP_AGENT_GEMINI_COMMAND`
+- `SVP_AGENT_GEMINI_ENABLED`
+- `SVP_AGENT_OPENCODE_COMMAND`
+- `SVP_AGENT_OPENCODE_ENABLED`
+- `SVP_AGENT_AMP_COMMAND`
+- `SVP_AGENT_AMP_ENABLED`
+
+Resolution precedence is fixed: CLI flags -> environment variables -> `~/.config/svp/config.json` -> builtin defaults.
 
 ## Expert Commands
 
@@ -103,9 +172,9 @@ Important behavior:
 Examples:
 
 ```bash
-svp plan --task "Ship the new harness" --agents codex,opencode --no-interactive
-svp plan --task "Add another feature slice" --mode add-task --agents codex,opencode --no-interactive
-svp plan --task "Tighten the overall scope" --mode revise-plan --agents codex,opencode --no-interactive
+svp plan --task "Ship the new harness" --workers codex,opencode --no-interactive
+svp plan --task "Add another feature slice" --mode add-task --workers codex,opencode --no-interactive
+svp plan --task "Tighten the overall scope" --mode revise-plan --workers codex,opencode --no-interactive
 ```
 
 ### `svp run`
@@ -211,7 +280,7 @@ bunx svp
 Use expert commands directly:
 
 ```bash
-npm run dev -- plan --task "Ship the new harness" --agents codex,opencode --no-interactive
+npm run dev -- plan --task "Ship the new harness" --workers codex,opencode --no-interactive
 npm run dev -- run
 npm run dev -- status
 ```
@@ -220,7 +289,7 @@ Build the distributable CLI:
 
 ```bash
 npm run build
-node dist/cli.js plan --task "Improve the README" --agents codex,opencode --no-interactive
+node dist/cli.js plan --task "Improve the README" --workers codex,opencode --no-interactive
 ```
 
 ## Testing The Loop
@@ -237,7 +306,7 @@ Run only the CLI smoke test layer:
 npm run test:smoke
 ```
 
-The smoke tests do not require real agent CLIs. They create temporary stub binaries named `codex`, `claude`, `gemini`, and `opencode`, then exercise the real CLI through:
+The smoke tests do not require real agent CLIs. They create temporary stub binaries named `codex`, `claude`, `gemini`, `opencode`, and `amp`, then exercise the real CLI through:
 
 - project creation
 - task execution

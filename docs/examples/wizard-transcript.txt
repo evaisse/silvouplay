@@ -1,0 +1,13 @@
+$ svp
+? No active project detected
+  Available orchestrators: codex, claude-code, opencode, amp
+  Available workers: codex, claude-code, gemini, opencode, amp
+  Unavailable agents: none
+❯ Create project
+
+Default orchestrator: codex
+Default workers: codex, claude-code, gemini, opencode, amp
+Execution defaults:
+- timeoutMs: 1800000
+- maxAttempts: 3
+- maxTokens: null
