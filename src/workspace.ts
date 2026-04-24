@@ -5,6 +5,21 @@ import { readProject } from './project.js';
 import { readState } from './state.js';
 import type { TaskDoc, WorkspacePaths, WorkspaceState } from './types.js';
 
+const IGNORED_DISCOVERY_DIRS = new Set([
+  '.git',
+  'node_modules',
+  'dist',
+  'coverage',
+]);
+
+export interface RunnableWorkspace {
+  title: string;
+  outputDir: string;
+  absoluteOutputDir: string;
+  openTaskCount: number;
+  pausedTaskCount: number;
+}
+
 export function resolveWorkspacePaths(outputDir = '.task-loop'): WorkspacePaths {
   const workDir = path.resolve(outputDir);
   return {
@@ -62,6 +77,76 @@ export function detectWorkspaceState(outputDir = '.task-loop'): WorkspaceState {
     openTaskCount: taskStates.filter((task) => task.status !== 'complete').length,
     pausedTaskCount: taskStates.filter((task) => task.status === 'paused').length,
   };
+}
+
+function normalizeOutputDir(rootDir: string, outputDir: string): string {
+  const relative = path.relative(rootDir, path.resolve(rootDir, outputDir));
+  return relative || '.';
+}
+
+export function readRunnableWorkspace(
+  outputDir: string,
+  rootDir = process.cwd(),
+): RunnableWorkspace {
+  const normalizedOutputDir = normalizeOutputDir(rootDir, outputDir);
+  const absoluteOutputDir = path.resolve(rootDir, normalizedOutputDir);
+  const projectFile = path.join(absoluteOutputDir, 'project.md');
+  const stateFile = path.join(absoluteOutputDir, 'state.json');
+  const tasksDir = path.join(absoluteOutputDir, 'tasks');
+
+  if (!existsSync(projectFile) || !existsSync(stateFile) || !existsSync(tasksDir)) {
+    throw new Error(`No runnable PRD found at ${normalizedOutputDir}`);
+  }
+
+  const project = readProject(projectFile);
+  const state = readState(stateFile, project);
+  const taskStates = Object.values(state.tasks);
+
+  return {
+    title: project.title,
+    outputDir: normalizedOutputDir,
+    absoluteOutputDir,
+    openTaskCount: taskStates.filter((task) => task.status !== 'complete').length,
+    pausedTaskCount: taskStates.filter((task) => task.status === 'paused').length,
+  };
+}
+
+export function discoverRunnableWorkspaces(rootDir = process.cwd()): RunnableWorkspace[] {
+  const matches: RunnableWorkspace[] = [];
+
+  function walk(currentDir: string): void {
+    const entries = readdirSync(currentDir, { withFileTypes: true });
+    const fileNames = new Set(
+      entries
+        .filter((entry) => entry.isFile())
+        .map((entry) => entry.name),
+    );
+    const hasTasksDir = entries.some((entry) => entry.isDirectory() && entry.name === 'tasks');
+
+    if (fileNames.has('project.md') && fileNames.has('state.json') && hasTasksDir) {
+      const outputDir = normalizeOutputDir(rootDir, currentDir);
+      try {
+        matches.push(readRunnableWorkspace(outputDir, rootDir));
+      } catch {
+        // Ignore malformed workspaces during recursive discovery.
+      }
+      return;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) {
+        continue;
+      }
+      if (IGNORED_DISCOVERY_DIRS.has(entry.name)) {
+        continue;
+      }
+      walk(path.join(currentDir, entry.name));
+    }
+  }
+
+  walk(rootDir);
+
+  return matches.sort((left, right) => left.outputDir.localeCompare(right.outputDir));
 }
 
 export function sortTaskDocs(tasks: TaskDoc[]): TaskDoc[] {

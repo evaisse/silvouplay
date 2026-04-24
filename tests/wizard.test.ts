@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { getAgentSpec } from '../src/agents.js';
-import { buildWizardMessage } from '../src/wizard.js';
+import type { RunnableWorkspace } from '../src/workspace.js';
+import { buildWizardChoices, buildWizardMessage } from '../src/wizard.js';
 import type { DiscoverySnapshot } from '../src/runtime/dsl.js';
 import type { WorkspaceState } from '../src/types.js';
 
@@ -21,6 +22,16 @@ const WORKSPACE: WorkspaceState = {
   openTaskCount: 0,
   pausedTaskCount: 0,
 };
+
+function createRunnableWorkspace(relativeOutputDir: string, title: string): RunnableWorkspace {
+  return {
+    title,
+    outputDir: relativeOutputDir,
+    absoluteOutputDir: `/tmp/project/${relativeOutputDir}`,
+    openTaskCount: 2,
+    pausedTaskCount: 0,
+  };
+}
 
 describe('wizard discovery summary', () => {
   it('lists available orchestrators, workers, and unavailable agents with reasons', () => {
@@ -64,5 +75,37 @@ describe('wizard discovery summary', () => {
     expect(message).toContain('Available orchestrators: codex, opencode');
     expect(message).toContain('Available workers: codex, opencode');
     expect(message).toContain('gemini (Command not found on PATH: gemini)');
+  });
+
+  it('offers single and multi PRD run modes when multiple runnable workspaces exist', () => {
+    const choices = buildWizardChoices(WORKSPACE, [
+      createRunnableWorkspace('.task-loop-a', 'Alpha'),
+      createRunnableWorkspace('.task-loop-b', 'Beta'),
+    ]);
+
+    expect(choices.map((choice) => choice.name)).toEqual([
+      'Run one PRD',
+      'Run multiple PRDs in parallel',
+      'Create project',
+    ]);
+  });
+
+  it('keeps the existing single-PRD flow when only one runnable workspace exists', () => {
+    const choices = buildWizardChoices({
+      ...WORKSPACE,
+      hasActiveProject: true,
+      suggestedMode: 'completion',
+      title: 'Alpha',
+      openTaskCount: 2,
+    }, [
+      createRunnableWorkspace('.task-loop', 'Alpha'),
+    ]);
+
+    expect(choices.map((choice) => choice.name)).toEqual([
+      'Continue project',
+      'Revise plan',
+      'Add task',
+      'Show status',
+    ]);
   });
 });

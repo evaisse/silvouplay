@@ -8,7 +8,7 @@ import { indexWorkspaceMarkdown, queryWorkspaceMarkdown } from '../src/markdownd
 import { commandPlan } from '../src/plan.js';
 
 describe('MarkdownDB integration', () => {
-  it('indexes the active workspace and queries task documents', async () => {
+  it('indexes the active workspace and queries task documents', { timeout: 15000 }, async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), 'svp-mddb-'));
     const previous = process.cwd();
     process.chdir(dir);

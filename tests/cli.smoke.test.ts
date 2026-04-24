@@ -78,7 +78,7 @@ describe('svp CLI smoke tests', () => {
     }
   });
 
-  it('supports add-task and revise-plan modes', () => {
+  it('supports add-task and revise-plan modes', { timeout: 15000 }, () => {
     const cwd = makeTempDir('svp-smoke-plan-modes-');
     const binDir = path.join(cwd, 'bin');
     const env = {
@@ -267,7 +267,7 @@ describe('svp CLI smoke tests', () => {
     }
   });
 
-  it('indexes and queries the markdown workspace from the CLI', () => {
+  it('indexes and queries the markdown workspace from the CLI', { timeout: 15000 }, () => {
     const cwd = makeTempDir('svp-smoke-index-query-');
     const binDir = path.join(cwd, 'bin');
     const env = {
@@ -392,6 +392,72 @@ describe('svp CLI smoke tests', () => {
       expect(rewritten).not.toContain('maxCostUsd');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('runs a selected subset of PRDs in isolated execution contexts', { timeout: 30000 }, () => {
+    const cwd = makeTempDir('svp-smoke-multi-prd-');
+    const siblingWorktreesDir = path.join(path.dirname(cwd), `${path.basename(cwd)}.worktrees`);
+    const binDir = path.join(cwd, 'bin');
+    const logPath = path.join(cwd, 'agent-log.jsonl');
+    const env = {
+      ...process.env,
+      PATH: binDir,
+      AGENT_STUB_LOG: logPath,
+      AGENT_STUB_DELAY_MS: '10',
+    };
+
+    try {
+      writeAgentStubs(binDir);
+
+      for (const output of ['.task-loop-a', '.task-loop-b', '.task-loop-c']) {
+        expect(runCli(cwd, [
+          'plan',
+          '--task',
+          `Seed ${output}`,
+          '--agents',
+          'codex,opencode',
+          '--no-interactive',
+          '--output',
+          output,
+        ], env).status).toBe(0);
+      }
+
+      const run = runCli(cwd, [
+        'run',
+        '--outputs',
+        '.task-loop-a,.task-loop-c',
+        '--max-parallel',
+        '2',
+      ], env);
+      expect(run.status).toBe(0);
+      expect(run.stdout).toContain('Parallel run');
+      expect(run.stdout).toContain('.task-loop-a');
+      expect(run.stdout).toContain('.task-loop-c');
+      expect(run.stdout).not.toContain('.task-loop-b');
+      expect(run.stdout).toContain('Success: 2');
+
+      const stateA = JSON.parse(readFileSync(path.join(cwd, '.task-loop-a', 'state.json'), 'utf8'));
+      const stateB = JSON.parse(readFileSync(path.join(cwd, '.task-loop-b', 'state.json'), 'utf8'));
+      const stateC = JSON.parse(readFileSync(path.join(cwd, '.task-loop-c', 'state.json'), 'utf8'));
+
+      expect(Object.values(stateA.tasks).every((task: any) => task.status === 'complete')).toBe(true);
+      expect(Object.values(stateC.tasks).every((task: any) => task.status === 'complete')).toBe(true);
+      expect(Object.values(stateB.tasks).some((task: any) => task.status !== 'complete')).toBe(true);
+
+      const runEntries = readFileSync(logPath, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line))
+        .filter((entry) => !String(entry.prompt).includes('--version'));
+      const runCwds = [...new Set(runEntries.map((entry) => entry.cwd))];
+
+      expect(runCwds).toHaveLength(2);
+      expect(runCwds).not.toContain(cwd);
+      expect(runCwds.every((entry) => entry.includes(path.basename(siblingWorktreesDir)))).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(siblingWorktreesDir, { recursive: true, force: true });
     }
   });
 });

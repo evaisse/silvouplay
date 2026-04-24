@@ -96,10 +96,19 @@ const path = require('node:path');
 const logFile = process.env.AGENT_STUB_LOG;
 if (!logFile) throw new Error('AGENT_STUB_LOG is required');
 const isProbe = process.argv.slice(2).includes('--version');
+const delayMs = Number(process.env.AGENT_STUB_DELAY_MS || '0');
 
 mkdirSync(path.dirname(logFile), { recursive: true });
 appendFileSync(logFile, JSON.stringify({ command: path.basename(process.argv[1]), cwd: process.cwd(), prompt: process.argv.slice(2).join(' ') }) + '\\n');
-process.exit(isProbe ? 0 : ${exitCode});
+(async () => {
+  if (!isProbe && delayMs > 0) {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  process.exit(isProbe ? 0 : ${exitCode});
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
 `,
       'utf8',
     );

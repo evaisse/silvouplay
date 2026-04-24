@@ -63,7 +63,17 @@ program
     'Directory containing the plan artefacts',
     '.task-loop',
   )
-  .action(commandRun);
+  .option('--outputs <list>', 'Comma-separated list of PRD output directories to run')
+  .option('--all', 'Run all discovered PRDs in parallel', false)
+  .option('--max-parallel <count>', 'Maximum number of PRD runs to execute concurrently', '2')
+  .option('--json', 'Print JSON summary output', false)
+  .action((opts) => commandRun({
+    output: opts.output,
+    outputs: opts.outputs,
+    all: opts.all,
+    maxParallel: Number(opts.maxParallel),
+    json: opts.json,
+  }));
 
 program
   .command('status')
@@ -118,7 +128,11 @@ program.action(async () => {
       return;
     }
     if (choice.action === 'run') {
-      await commandRun({ output: '.task-loop' });
+      await commandRun({
+        output: '.task-loop',
+        outputs: choice.outputs,
+        maxParallel: choice.maxParallel,
+      });
       return;
     }
     await commandPlan({
